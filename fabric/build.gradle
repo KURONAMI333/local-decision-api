@@ -26,7 +26,7 @@ loom {
     runs {
         client {
             client()
-            if (providers.gradleProperty("somSmoke").isPresent()) property("somcore.selfTest", "true")
+            if (providers.gradleProperty("inferenceSmoke").isPresent()) property("localinferenceapi.selfTest", "true")
             setConfigName('Fabric Client')
             ideConfigGenerated(true)
             runDir('runs/client')

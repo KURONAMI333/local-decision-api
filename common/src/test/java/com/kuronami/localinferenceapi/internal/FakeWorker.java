@@ -1,4 +1,4 @@
-package com.kuronami.somcore.internal;
+package com.kuronami.localinferenceapi.internal;
 
 import java.io.*;
 

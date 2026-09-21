@@ -1,4 +1,4 @@
-package com.kuronami.somcore.runtime;
+package com.kuronami.localinferenceapi.runtime;
 import ai.onnxruntime.*;
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer;
 import org.graalvm.polyglot.*;
@@ -16,7 +16,7 @@ public final class ModelHost implements AutoCloseable {
             options.setInterOpNumThreads(1);
             session = environment.createSession(model.toString(), options);
         }
-        try (var stream = Worker.resource("som/model/tokenizer.json")) {
+        try (var stream = Worker.resource("localinferenceapi/model/tokenizer.json")) {
             tokenizer = HuggingFaceTokenizer.newInstance(stream, Map.of("truncation", "false", "padding", "false"));
         }
     }

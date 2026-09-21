@@ -1,4 +1,4 @@
-package com.kuronami.somcore.runtime;
+package com.kuronami.localinferenceapi.runtime;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -32,7 +32,7 @@ public final class Worker {
         if (verified(model)) return model;
         Path temporary = Files.createTempFile(jar.getParent(), "model-", ".part");
         try {
-            try (var source = resource("som/model/model.onnx")) { Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING); }
+            try (var source = resource("localinferenceapi/model/model.onnx")) { Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING); }
             if (!verified(temporary)) throw new IOException("Embedded model checksum mismatch");
             try { Files.move(temporary, model, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
             catch (AtomicMoveNotSupportedException ignored) { Files.move(temporary, model, StandardCopyOption.REPLACE_EXISTING); }
@@ -55,7 +55,7 @@ public final class Worker {
                  .allowHostAccess(HostAccess.newBuilder(HostAccess.EXPLICIT).allowArrayAccess(true).build())
                  .option("engine.WarnInterpreterOnly", "false").out(System.err).err(System.err).build()) {
             python.getBindings("python").putMember("host", host);
-            python.getBindings("python").putMember("calibration_json", read("som/model/calibrator.json"));
+            python.getBindings("python").putMember("calibration_json", read("localinferenceapi/model/calibrator.json"));
             python.eval("python", read("adapter.py"));
             Value decide = python.getBindings("python").getMember("decide");
             send(protocol, "{\"ready\":true}");

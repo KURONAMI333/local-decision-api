@@ -1,8 +1,8 @@
-package com.kuronami.somcore.internal;
+package com.kuronami.localinferenceapi.internal;
 
 import com.google.gson.*;
-import com.kuronami.somcore.api.DecisionRequest;
-import com.kuronami.somcore.api.DecisionResult;
+import com.kuronami.localinferenceapi.api.DecisionRequest;
+import com.kuronami.localinferenceapi.api.DecisionResult;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -40,8 +40,8 @@ public final class WorkerClient implements AutoCloseable {
         this.startupTimeout = startupTimeout;
         this.inferenceTimeout = inferenceTimeout;
         executor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(16),
-                task -> daemon(task, "somcore-inference"), new ThreadPoolExecutor.AbortPolicy());
-        watchdog = Executors.newSingleThreadScheduledExecutor(task -> daemon(task, "somcore-watchdog"));
+                task -> daemon(task, "localinferenceapi-inference"), new ThreadPoolExecutor.AbortPolicy());
+        watchdog = Executors.newSingleThreadScheduledExecutor(task -> daemon(task, "localinferenceapi-watchdog"));
     }
 
     private static Thread daemon(Runnable task, String name) {
@@ -60,7 +60,7 @@ public final class WorkerClient implements AutoCloseable {
                 executor.execute(() -> execute(request, future));
             } catch (RejectedExecutionException full) {
                 pending.remove(future);
-                future.completeExceptionally(new RejectedExecutionException("SOM Core request queue is full"));
+                future.completeExceptionally(new RejectedExecutionException("Local Inference API request queue is full"));
             }
         }
         return future;
@@ -71,14 +71,14 @@ public final class WorkerClient implements AutoCloseable {
             if (future.isDone()) return;
             ensureStarted();
             if (future.isDone()) return;
-            ScheduledFuture<?> deadline = deadline(inferenceTimeout, "SOM Core inference timed out");
+            ScheduledFuture<?> deadline = deadline(inferenceTimeout, "Local Inference API inference timed out");
             try {
                 writeFrame(output, JSON.toJson(request));
                 JsonObject response = readFrame(input);
                 if (response.has("error")) {
                     // モデルの入力拒否はプロセス故障ではない。詳細ログは subprocess 側へ置く。
                     deadline.cancel(false);
-                    future.completeExceptionally(new IllegalArgumentException("SOM Core rejected this request"));
+                    future.completeExceptionally(new IllegalArgumentException("Local Inference API rejected this request"));
                 } else {
                     DecisionResult result = parseResult(response, request.choices().size());
                     deadline.cancel(false);
@@ -88,7 +88,7 @@ public final class WorkerClient implements AutoCloseable {
                 deadline.cancel(false);
             }
         } catch (Exception failure) {
-            fail(new IllegalStateException("SOM Core worker failed; see the local worker log", failure));
+            fail(new IllegalStateException("Local Inference API worker failed; see the local worker log", failure));
         } finally {
             synchronized (lock) { pending.remove(future); }
         }
@@ -99,7 +99,7 @@ public final class WorkerClient implements AutoCloseable {
             if (terminalFailure != null) throw new IOException("Worker is closed");
             if (process != null) return;
         }
-        ScheduledFuture<?> deadline = deadline(startupTimeout, "SOM Core startup timed out");
+        ScheduledFuture<?> deadline = deadline(startupTimeout, "Local Inference API startup timed out");
         try {
             Process created = launcher.launch();
             synchronized (lock) {
@@ -179,8 +179,8 @@ public final class WorkerClient implements AutoCloseable {
     }
 
     private static Process launchBundled(Path gameDirectory) throws IOException {
-        Path cache = gameDirectory.resolve(".somcore/runtime");
-        Path jar = RuntimeCache.extract(cache, () -> WorkerClient.class.getResourceAsStream("/som/runtime.jar"));
+        Path cache = gameDirectory.resolve(".localinferenceapi/runtime");
+        Path jar = RuntimeCache.extract(cache, () -> WorkerClient.class.getResourceAsStream("/localinferenceapi/runtime.jar"));
         boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
         Path java = Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java");
         Path log = cache.resolve("worker-" + ProcessHandle.current().pid() + ".log");
@@ -223,5 +223,5 @@ public final class WorkerClient implements AutoCloseable {
 
     public boolean isClosed() { synchronized (lock) { return terminalFailure != null; } }
 
-    @Override public void close() { fail(new CancellationException("SOM Core stopped")); }
+    @Override public void close() { fail(new CancellationException("Local Inference API stopped")); }
 }

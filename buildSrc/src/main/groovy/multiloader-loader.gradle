@@ -48,7 +48,7 @@ tasks.named('sourcesJar', Jar) {
 tasks.named('processResources') {
     dependsOn ':runtime:shadowJar'
     from(rootProject.layout.projectDirectory.file('runtime/build/libs/runtime.jar')) {
-        into 'som'
+        into 'localinferenceapi'
         rename { 'runtime.jar' }
     }
 }

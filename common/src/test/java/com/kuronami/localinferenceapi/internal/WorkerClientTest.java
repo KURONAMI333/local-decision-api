@@ -1,7 +1,7 @@
-package com.kuronami.somcore.internal;
+package com.kuronami.localinferenceapi.internal;
 
 import com.google.gson.JsonParser;
-import com.kuronami.somcore.api.*;
+import com.kuronami.localinferenceapi.api.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.*;

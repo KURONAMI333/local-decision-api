@@ -1,30 +1,97 @@
-# SOM Core
+# Local Inference API
 
-Minecraft 1.21.1 向けのローカル選択判定ライブラリ。現在は非公開の技術検証版です。Verdict 初代 151M のゲーム内判断品質は未合格であり、これだけでは mob の行動やゲーム内容を変えません。
+**Embedded AI inference for Minecraft mods. No external setup required.**
 
-配布 JAR に Python 実行環境、推論ライブラリ、モデルを同梱し、最初の判定時に利用中の Java で専用プロセスを起動します。Python の手動導入、モデルの手動配置、API キー、外部推論サーバーは不要です。
+A library mod that lets other mods submit a context, a question, and a list of choices to a bundled local model. Results arrive asynchronously. This library does not add gameplay by itself.
+
+## Status
+
+Unpublished prototype for Minecraft **1.21.1**, **Fabric and NeoForge**, **Java 21+**. The current model is the first Verdict 151M checkpoint; it is a technical test model, not an approved general-purpose game decision maker. It has produced incorrect action choices. Evaluate it on your own task before relying on its output.
+
+macOS Apple Silicon is the tested platform. Windows x64 and Linux x64/arm64 native libraries are bundled but have not been exercised. Intel Macs are not supported by the current bundle. The unoptimized JAR is roughly 700 MB and the worker used approximately 1.1 GB peak RSS in standalone testing.
+
+## For players
+
+Install the JAR matching your Minecraft loader in `mods/`. Minecraft and the loader must already be installed. Fabric API is included in the Fabric JAR.
+
+No Python installation, model download, account, API key, or separately managed inference server is needed. The model and runtime are inside the JAR. The first request starts a local worker automatically; disconnecting or stopping the server closes it. Gameplay features are provided by mods that depend on this library.
+
+## For mod developers
+
+The MOD ID is **`localinferenceapi`**. The Java entry point is **`com.kuronami.localinferenceapi.api.LocalInference`**.
+
+There is no published Maven repository yet. For prototype integration, copy the matching built MOD JAR into your development project's `libs/` directory and use it as a compile dependency:
+
+```groovy
+// Fabric / Loom
+modCompileOnly files('libs/localinferenceapi-fabric-1.21.1-0.1.0.jar')
+
+// NeoForge (use this instead in a NeoForge project)
+compileOnly files('libs/localinferenceapi-neoforge-1.21.1-0.1.0.jar')
+```
+
+Install the same JAR in your test game's `mods/` directory at runtime. Declare it as a required dependency in your consumer mod:
+
+Inside `fabric.mod.json`’s existing `depends` object:
+
+```json
+"localinferenceapi": ">=0.1.0"
+```
+
+```toml
+# Add to META-INF/neoforge.mods.toml; replace yourmod with your MOD ID.
+[[dependencies.yourmod]]
+modId = "localinferenceapi"
+type = "required"
+versionRange = "[0.1.0,)"
+ordering = "AFTER"
+side = "BOTH"
+```
+
+The loader initializes the library. Consumer mods normally only call `decide`; `initialize` and `close` are lifecycle hooks for the library itself.
 
 ```java
-import com.kuronami.somcore.api.DecisionRequest;
-import com.kuronami.somcore.api.SomCore;
+import com.kuronami.localinferenceapi.api.DecisionRequest;
+import com.kuronami.localinferenceapi.api.LocalInference;
+import java.util.List;
 
-SomCore.decide(new DecisionRequest(
-    "The villager is safe at home. It is night.",
-    "What should the villager do?",
-    java.util.List.of("Sleep", "Go outside")
-)).thenAccept(result -> {
-    // selected は 0 始まり。null なら選択保留。
-    // 完了 callback がゲームスレッドで動く保証はない。
-    // ワールドを変更する場合、server.execute(...) 等で戻すこと。
+// A small classification example used in the runtime smoke test.
+var request = new DecisionRequest(
+    "I cannot remember my login password. Please reset it.",
+    "What does this person need?",
+    List.of("Reporting a lost bank card", "Resetting a password", "Requesting a loan")
+);
+
+LocalInference.decide(request).whenComplete((result, failure) -> {
+    if (failure != null) {
+        // Keep your deterministic fallback behavior.
+        return;
+    }
+    if (result.selected() == null) {
+        // The model abstained.
+        return;
+    }
+    String selectedChoice = request.choices().get(result.selected());
+    // Pass the result to your game's thread before accessing world state.
+    // Recheck that the request is still relevant to the current world/entity.
 });
 ```
 
-同期 callback は短時間で返してください。重い処理は `thenAcceptAsync`、ワールド操作はゲームスレッドの executor に渡します。失敗通知は別スレッドから行うことがあります。ゲーム行為の決定権と server/client 間の同期は、この API を使う側の責任です。
+### Contract
 
-入力は不変の文字列スナップショットです。1〜24 個の異なる選択肢を渡せます。空文字列・過大な入力・モデル区切り・不正 Unicode は拒否します。さらにモデルの 512 token 上限は runtime 側で検査し、切り捨てません。
+- Input is an immutable snapshot of strings: 1–24 distinct choices. Empty, oversized, reserved-token, and malformed Unicode inputs are rejected. The runtime also rejects inputs above 512 tokens instead of truncating them.
+- `selected()` is a zero-based choice index, or `null` for abstention. Both score lists contain one score per choice **plus an abstention score at the end**. Probabilities are model scores, not guarantees of correctness.
+- One request runs at a time; at most 16 more can wait. Full queues, startup failures, timeouts, and shutdown complete futures exceptionally. Invalid constructor arguments throw immediately.
+- Startup timeout is 180 seconds; each inference timeout is 60 seconds. A failed worker is not automatically restarted in a loop. A new server session or client connection can initialize a fresh worker.
+- Completion callbacks are not guaranteed to run on the game thread. Keep synchronous callbacks short; use `thenAcceptAsync` for other work. Schedule world changes through the appropriate server/client executor. This API does not synchronize game actions between clients and servers.
+- Cache and worker logs live in `.localinferenceapi/runtime/` under the game directory. The dedicated worker JVM isolates its Python and native inference libraries from other mods.
 
-推論は 1 件ずつ、待機は最大 16 件。上限超過、起動失敗、タイムアウト、停止は future の例外完了になります。モデルが返す probabilities は推論スコアであり、ゲーム内での正しさの保証ではありません。起動・推論障害後の無限自動再試行はしません。次のサーバー開始またはクライアント接続で新しい worker を用意します。
+## Building
 
-キャッシュと worker ログはゲームディレクトリの `.somcore/runtime/` に保存します。初回起動の期限は 180 秒、各推論は 60 秒。サーバー停止またはクライアント切断時に worker と未完了 future を終了します。runtime は専用 Java プロセスのため、他の MOD が利用する GraalPy や JNI とクラスローダーを共有しません。
+1. Use JDK 21 and prepare the pinned model files as described in [runtime/MODEL.md](runtime/MODEL.md). This is a developer-only step; players do not download them separately.
+2. Run `./gradlew build --no-build-cache`.
+3. Find loader JARs under `fabric/build/libs/` and `neoforge/build/libs/`. Do not install `-sources` or `-javadoc` JARs.
 
-開発用の内部 runtime は `:runtime:shadowJar` で作られ、Fabric / NeoForge の成果物に `som/runtime.jar` として入ります。Fabric 版は Fabric API も nested mod として同梱し、既存の Fabric API がある場合は Fabric Loader の依存解決に委ねます。公開・配布の準備やゲーム内受入は完了していません。
+The common unit tests cover queue limits, worker reuse, shutdown, timeouts, protocol validation, and cache repair. `python3 runtime/tools/smoke.py runtime/build/libs/runtime.jar` exercises the real model; on macOS it also denies network access with the OS sandbox.
+
+This prototype has not been published. A final model choice, Windows validation, size reduction, and broader gameplay evaluation remain open.

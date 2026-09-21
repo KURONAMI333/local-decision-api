@@ -2,7 +2,7 @@ import subprocess,struct,json,time,os,sys,tempfile
 from pathlib import Path
 jar=Path(sys.argv[1]).resolve()
 java=os.environ.get('JAVA_HOME', '') + '/bin/java' if os.environ.get('JAVA_HOME') else 'java'
-with tempfile.TemporaryDirectory(prefix='som-clean-') as home:
+with tempfile.TemporaryDirectory(prefix='local-inference-clean-') as home:
  env={'PATH':os.environ.get('PATH',''), 'HOME':home,'DJL_OFFLINE':'true'}
  started=time.monotonic()
  p=subprocess.Popen(([ '/usr/bin/sandbox-exec','-p','(version 1)(allow default)(deny network*)'] if sys.platform=='darwin' else []) + [java,'-Duser.home='+home,'-jar',str(jar),'--worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,cwd=home)

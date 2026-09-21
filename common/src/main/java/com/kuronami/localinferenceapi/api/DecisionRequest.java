@@ -1,4 +1,4 @@
-package com.kuronami.somcore.api;
+package com.kuronami.localinferenceapi.api;
 
 import java.util.List;
 import java.util.Objects;
