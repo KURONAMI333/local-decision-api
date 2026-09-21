@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="${neoforge_loader_version_range}"
+license="${license}"
+[[mods]]
+modId="inferencesharedfixture"
+version="${version}"
+displayName="Inference Shared Fixture"
+authors="${mod_author}"
+description='''Development-only shared-worker failure probe.'''
+[[dependencies.inferencesharedfixture]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1,1.22)"
+side="BOTH"
+[[dependencies.inferencesharedfixture]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.227,)"
+side="BOTH"
+[[dependencies.inferencesharedfixture]]
+modId="localinferenceapi"
+type="required"
+versionRange="[0.1.0,)"
+ordering="AFTER"
+side="BOTH"

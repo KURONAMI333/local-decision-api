@@ -11,7 +11,7 @@ import org.graalvm.polyglot.*;
 /** ゲームとは別のJVMで動く、同梱モデル専用のワーカー。ネットワークを使わない。 */
 public final class Worker {
     private static final int MAX_FRAME = 1_048_576;
-    private static final String HASH = "4ae01f822538b000fa0e55859d4b3e6b40871d860149397e8784428b2a42ee5e";
+    private static final String HASH = "4b4c4bdb608bbbcb719daf3f7301bae50bc020f046f8d1620f9a4f7471f5baf9";
     static InputStream resource(String name) throws IOException {
         var stream = Worker.class.getResourceAsStream("/" + name);
         if (stream == null) throw new IOException("Missing embedded resource: " + name);

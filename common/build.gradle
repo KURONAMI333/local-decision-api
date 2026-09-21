@@ -39,3 +39,42 @@ artifacts {
     commonJava sourceSets.main.java.sourceDirectories.singleFile
     commonResources sourceSets.main.resources.sourceDirectories.singleFile
 }
+
+// 開発者のコンパイルにはモデルを含む実行用MOD全体を要求しない。
+// このJARはcompileOnly専用。実行時にはloader用MODが同じAPIクラスを提供する。
+tasks.register('apiJar', Jar) {
+    dependsOn tasks.named('classes')
+    archiveBaseName = 'local-inference-api'
+    from(rootProject.file('LICENSE'))
+    from(sourceSets.main.output) { include 'com/kuronami/localinferenceapi/api/**' }
+}
+
+tasks.register('apiSourcesJar', Jar) {
+    archiveBaseName = 'local-inference-api'
+    from(rootProject.file('LICENSE'))
+    archiveClassifier = 'sources'
+    from(sourceSets.main.allSource) { include 'com/kuronami/localinferenceapi/api/**' }
+}
+
+publishing {
+    publications {
+        api(MavenPublication) {
+            groupId = 'com.kuronami.localinferenceapi'
+            artifactId = 'local-inference-api'
+            version = project.version
+            artifact tasks.named('apiJar')
+            artifact tasks.named('apiSourcesJar')
+            pom {
+                name = 'Local Inference API'
+                licenses { license { name = 'MIT License'; url = 'https://opensource.org/license/mit' } }
+                description = 'Compile-only Java API for the Local Inference API Minecraft mod.'
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'Developer'
+            url = rootProject.layout.buildDirectory.dir('developer-repository')
+        }
+    }
+}

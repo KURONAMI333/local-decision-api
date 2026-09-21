@@ -1,0 +1,10 @@
+{
+  "inferenceexample.queued": "依頼の種類を判定しています…",
+  "inferenceexample.invalid": "特殊なモデル用記号を含めず、1〜500文字で入力してください。",
+  "inferenceexample.failed": "判定できませんでした。しばらくしてからもう一度お試しください。",
+  "inferenceexample.abstained": "モデルは種類を選べませんでした。",
+  "inferenceexample.result": "依頼の種類：%s",
+  "inferenceexample.food": "食料",
+  "inferenceexample.light": "照明",
+  "inferenceexample.directions": "道案内"
+}

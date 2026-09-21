@@ -1,0 +1,10 @@
+{
+  "inferenceexample.queued": "Classifying your request…",
+  "inferenceexample.invalid": "Use a request of 1–500 characters without special model tokens.",
+  "inferenceexample.failed": "The request could not be classified. Please try again later.",
+  "inferenceexample.abstained": "The model could not choose a category.",
+  "inferenceexample.result": "Request category: %s",
+  "inferenceexample.food": "Food",
+  "inferenceexample.light": "Lighting",
+  "inferenceexample.directions": "Directions"
+}

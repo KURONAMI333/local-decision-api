@@ -10,7 +10,7 @@ dependencies {
 java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
 tasks.register('verifyModel') {
  doLast {
-  ['model.onnx':'4ae01f822538b000fa0e55859d4b3e6b40871d860149397e8784428b2a42ee5e',
+  ['model.onnx':'4b4c4bdb608bbbcb719daf3f7301bae50bc020f046f8d1620f9a4f7471f5baf9',
    'tokenizer.json':'8bb449eb0c037aae44115b65905bb339b8f3f74eb37067c19127feb3c0755723',
    'calibrator.json':'af2a876993148efa0726b6ccf710fe2303897d20c0ce8c7c9036eb50f64d23de'].each { name, expected ->
    def model = file('models/' + name)
@@ -34,6 +34,9 @@ processResources {
  from('models') { into 'localinferenceapi/model' }
  from(layout.buildDirectory.dir('notices'))
  from('MODEL.md') { into 'third-party/model' }
+ from('licenses') { into 'third-party/model' }
+ from(rootProject.file('LICENSE')) { into 'third-party/local-inference-api' }
+ from(rootProject.file('THIRD_PARTY.md'))
 }
 shadowJar {
  archiveFileName = 'runtime.jar'
