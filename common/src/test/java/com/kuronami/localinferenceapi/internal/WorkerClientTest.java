@@ -91,6 +91,106 @@ class WorkerClientTest {
         } finally { release.countDown(); client.close(); }
     }
 
+    @Test void blockedSuccessCallbackDoesNotStopNextInference() throws Exception {
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch callbackEntered = new CountDownLatch(1);
+        try (var client = new WorkerClient(() -> launchAfter("ok", start), Duration.ofSeconds(5), Duration.ofSeconds(5))) {
+            var first = client.decide(REQUEST);
+            var callback = first.thenAccept(result -> blockCallback(callbackEntered, release));
+            start.countDown();
+            try {
+                assertTrue(callbackEntered.await(5, TimeUnit.SECONDS));
+                assertEquals(0, client.decide(REQUEST).get(3, TimeUnit.SECONDS).selected());
+                assertFalse(callback.isDone(), "The first callback must still be blocked");
+            } finally { release.countDown(); }
+            callback.get(5, TimeUnit.SECONDS);
+        } finally { start.countDown(); release.countDown(); }
+    }
+
+    @Test void blockedInputRejectionCallbackDoesNotStopNextSuccessfulInference() throws Exception {
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch callbackEntered = new CountDownLatch(1);
+        var rejected = new DecisionRequest("reject this input", REQUEST.question(), REQUEST.choices());
+        try (var client = new WorkerClient(() -> launchAfter("reject-selected-input", start), Duration.ofSeconds(5), Duration.ofSeconds(5))) {
+            var first = client.decide(rejected);
+            var callback = first.handle((result, error) -> {
+                assertInstanceOf(IllegalArgumentException.class, error);
+                blockCallback(callbackEntered, release);
+                return null;
+            });
+            start.countDown();
+            try {
+                assertTrue(callbackEntered.await(5, TimeUnit.SECONDS));
+                assertEquals(0, client.decide(REQUEST).get(3, TimeUnit.SECONDS).selected());
+                assertFalse(callback.isDone(), "The rejection callback must still be blocked");
+                assertFalse(client.isClosed());
+            } finally { release.countDown(); }
+            callback.get(5, TimeUnit.SECONDS);
+        } finally { start.countDown(); release.countDown(); }
+    }
+
+    @Test void closeRacingWithResponseNotificationLeavesNoUnfinishedRequests() throws Exception {
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch callbackEntered = new CountDownLatch(1);
+        AtomicInteger notifications = new AtomicInteger();
+        AtomicReference<Process> process = new AtomicReference<>();
+        var client = new WorkerClient(() -> {
+            var child = launchAfter("ok", start);
+            process.set(child);
+            return child;
+        }, Duration.ofSeconds(5), Duration.ofSeconds(5));
+        var first = client.decide(REQUEST);
+        var blocked = first.thenAccept(result -> blockCallback(callbackEntered, release));
+        var requests = new ArrayList<CompletableFuture<DecisionResult>>();
+        var completions = new ArrayList<CompletableFuture<Void>>();
+        start.countDown();
+        try {
+            assertTrue(callbackEntered.await(5, TimeUnit.SECONDS));
+            // 確定済みの通知が止まっている間に、後続の応答受理と close を競合させる。
+            for (int i = 0; i < 16; i++) {
+                var future = client.decide(REQUEST);
+                requests.add(future);
+                completions.add(future.handle((result, error) -> {
+                    notifications.incrementAndGet();
+                    if (error != null) assertInstanceOf(CancellationException.class, error);
+                    else assertNotNull(result);
+                    return null;
+                }));
+            }
+            client.close();
+            CompletableFuture.allOf(completions.toArray(CompletableFuture[]::new)).get(5, TimeUnit.SECONDS);
+            assertEquals(requests.size(), notifications.get());
+            assertTrue(requests.stream().allMatch(CompletableFuture::isDone));
+            assertFalse(blocked.isDone(), "close must not wait for the accepted response callback");
+            assertTrue(process.get().waitFor(5, TimeUnit.SECONDS));
+        } finally { release.countDown(); start.countDown(); client.close(); }
+        blocked.get(5, TimeUnit.SECONDS);
+        assertEquals(requests.size(), notifications.get());
+    }
+
+    private Process launchAfter(String mode, CountDownLatch start) throws IOException {
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) throw new IOException("Test launch gate timed out");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Test launch interrupted", interrupted);
+        }
+        return launch(mode);
+    }
+
+    private static void blockCallback(CountDownLatch entered, CountDownLatch release) {
+        entered.countDown();
+        try {
+            if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError("Callback release timed out");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Callback interrupted", interrupted);
+        }
+    }
+
     @Test void startupTimeoutCompletesPendingAndDoesNotRetry() throws Exception {
         AtomicInteger launches = new AtomicInteger();
         try (var client = new WorkerClient(() -> { launches.incrementAndGet(); return launch("startup-hang"); }, Duration.ofMillis(300), Duration.ofSeconds(5))) {

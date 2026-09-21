@@ -1,25 +1,19 @@
 package com.kuronami.localinferenceapi.api;
 
-import com.kuronami.localinferenceapi.internal.WorkerClient;
-import java.nio.file.Path;
+import com.kuronami.localinferenceapi.internal.InferenceLifecycle;
 import java.util.concurrent.CompletableFuture;
 
-/** ローカル判定 API。完了 callback のゲームスレッド実行は保証しないため、ワールド変更は呼出側で再スケジュールする。 */
+/** ゲームの状態を文字列のsnapshotとして送り、候補からの選択を非同期で受け取る共有API。 */
 public final class LocalInference {
-    private static WorkerClient worker;
     private LocalInference() {}
 
-    /** loader の lifecycle から呼ぶ。ここではモデルや subprocess を起動しない。 */
-    public static synchronized void initialize(Path gameDirectory) {
-        if (worker == null || worker.isClosed()) worker = new WorkerClient(gameDirectory.toAbsolutePath().normalize());
-    }
-
-    public static synchronized CompletableFuture<DecisionResult> decide(DecisionRequest request) {
-        if (worker == null) return CompletableFuture.failedFuture(new IllegalStateException("Local Inference API is not initialized"));
-        return worker.decide(request);
-    }
-
-    public static synchronized void close() {
-        if (worker != null) worker.close();
+    /**
+     * 判定を要求する。完了callbackのゲームスレッド実行は保証しない。
+     * ワールド変更はゲームスレッドへ移し、対象のworld/playerが今も有効か再確認すること。
+     * @param request 変更不能なcontext・question・choices
+     * @return 候補indexまたは棄権を含む結果。混雑・故障・終了時は例外完了する
+     */
+    public static CompletableFuture<DecisionResult> decide(DecisionRequest request) {
+        return InferenceLifecycle.decide(request);
     }
 }

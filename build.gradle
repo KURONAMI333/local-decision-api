@@ -4,3 +4,21 @@ plugins {
     // see https://projects.neoforged.net/neoforged/moddevgradle for new versions
     id 'net.neoforged.moddev' version '2.0.49-beta' apply false
 }
+
+// 配布JARと別に、モデルを含まない小さい開発者キットを再現可能に作る。
+tasks.register('developerKit', Zip) {
+    dependsOn ':common:publishApiPublicationToDeveloperRepository'
+    archiveFileName = "local-inference-api-developer-kit-${project.version}.zip"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    from('SDK_README.md') { rename { 'README.md' } }
+    from('LICENSE')
+    from('THIRD_PARTY.md')
+    from('runtime/MODEL.md') { into 'runtime' }
+    from(layout.buildDirectory.dir('developer-repository')) { into 'maven' }
+    from('examples/request-classifier') {
+        into 'example'
+        exclude '**/build/**', '**/.gradle/**', '**/run/**', '**/runs/**', '**/libs/**', '**/*.log', '**/.DS_Store'
+    }
+}

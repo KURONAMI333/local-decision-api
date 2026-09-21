@@ -62,3 +62,15 @@ An additional explicit `-Dinferenceexample.failureSmoke=true` enables a destruct
 The fixture then requires a new API request to fail and at least five more server ticks to occur. The final marker is `INFERENCE_SHARED_FAILURE_PASS`. This leaves inference intentionally unavailable until the next server session. Stop and restart the isolated test server afterward. The fixture never runs this failure injection merely because it is installed, and it is not a gameplay MOD or a player-facing distribution.
 
 The process checks are tied to this prototype's worker launch format; changes to that format must update and re-review the test. This proves shared use and game-loop survival after an isolated worker failure, not behavior of a connected player's GUI or reconnect flow.
+
+## Integrated-client lifecycle fixture
+
+The fixture also has a client-only source directory, `fixture-client/`. Launch its selected loader development client with `-PclientSmoke` and the matching runtime-library property. Use the `:fixture-fabric:runClient` or `:fixture-neoforge:runClient` task through your workspace's guarded client-launch procedure. The direct JVM opt-in is `-Dinferenceexample.clientSmoke=true`; no `exampleSmoke` or `failureSmoke` flag is needed.
+
+This mode creates **two new worlds** with unique `lia-client-probe-<UUID>-first/second` names inside the development game's saves directory. It leaves those worlds available for inspection and never opens, replaces, or deletes an existing world. It starts only when the client has no world loaded.
+
+The client state machine creates the first flat world, performs real inference, submits another request immediately before normal disconnect, waits for the old integrated server to shut down and the old future to settle, performs inference while at the title screen, then creates a second world and infers again. Callbacks are explicitly dispatched to and checked on the client thread. The second integrated server must differ from the first. It finally disconnects and closes the test client normally. The fixture calls only `LocalInference.decide`; all runtime lifecycle management belongs to the library's loader hooks.
+
+The final marker is `CLIENT_LIFECYCLE_PASS`. Any deadline or consistency failure prints `CLIENT_LIFECYCLE_FAIL`; a successful process exit alone is not a pass. The old pre-disconnect request may complete normally before cancellation reaches it; the probe requires that it has settled, and logs whether it failed, rather than assuming cancellation won that race.
+
+The implementation follows the Minecraft 1.21.1 decompiled `WorldOpenFlows.createFreshLevel` and `PauseScreen.onDisconnect` paths. It invokes game APIs directly and sends no mouse or keyboard input. This exercises real integrated-server stop, title inference, and fresh-world reentry in the same JVM. It does not prove a human player's chat rendering, remote-server reconnect, or reopening the exact same save.

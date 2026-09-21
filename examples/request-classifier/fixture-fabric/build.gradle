@@ -23,6 +23,7 @@ loom {
     runs {
         client {
             client()
+            if (providers.gradleProperty('clientSmoke').isPresent()) property('inferenceexample.clientSmoke', 'true')
             if (providers.gradleProperty('exampleSmoke').isPresent()) property('inferenceexample.smoke', 'true')
             setConfigName('Fabric Client')
             ideConfigGenerated(true)
@@ -43,3 +44,5 @@ if (providers.gradleProperty('localInferenceFabricRuntime').isPresent()) {
 
 base { archivesName = 'inference-shared-fixture-fabric-1.21.1' }
 sourceSets.main.java.srcDir rootProject.file('fixture-common/src/main/java')
+
+sourceSets.main.java.srcDir rootProject.file('fixture-client/src/main/java')

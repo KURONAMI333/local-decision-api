@@ -21,7 +21,7 @@ public final class DeveloperProbe {
                 if (failure != null) Constants.LOG.error("LOCAL_INFERENCE_SELF_TEST_FAILED", failure);
                 else if (!Integer.valueOf(1).equals(second.selected())) Constants.LOG.error("LOCAL_INFERENCE_SELF_TEST_FAILED: {}", second);
                 else Constants.LOG.info("LOCAL_INFERENCE_SELF_TEST_PASSED elapsed_ms={} result={}", (System.nanoTime() - started) / 1e6, second);
-            } finally { LocalInference.close(); }
+            } finally { InferenceLifecycle.endSession(); }
         });
     }
 }

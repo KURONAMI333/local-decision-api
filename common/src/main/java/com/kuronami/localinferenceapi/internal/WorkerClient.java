@@ -78,11 +78,11 @@ public final class WorkerClient implements AutoCloseable {
                 if (response.has("error")) {
                     // モデルの入力拒否はプロセス故障ではない。詳細ログは subprocess 側へ置く。
                     deadline.cancel(false);
-                    future.completeExceptionally(new IllegalArgumentException("Local Inference API rejected this request"));
+                    completeResponse(future, null, new IllegalArgumentException("Local Inference API rejected this request"));
                 } else {
                     DecisionResult result = parseResult(response, request.choices().size());
                     deadline.cancel(false);
-                    future.complete(result);
+                    completeResponse(future, result, null);
                 }
             } finally {
                 deadline.cancel(false);
@@ -92,6 +92,20 @@ public final class WorkerClient implements AutoCloseable {
         } finally {
             synchronized (lock) { pending.remove(future); }
         }
+    }
+
+    private void completeResponse(CompletableFuture<DecisionResult> future, DecisionResult result, Throwable failure) {
+        synchronized (lock) {
+            // close / timeout と応答の受理を一箇所で決着させる。
+            // pending を先に回収した側だけが通知を担当し、除去後も必ず完了を発行する。
+            if (!pending.remove(future)) return;
+        }
+        // 利用側の同期 callback が停止しても、次の推論を止めない。
+        // この thread は通知専用であり、native 推論は executor 上に留める。
+        Thread.startVirtualThread(() -> {
+            if (failure == null) future.complete(result);
+            else future.completeExceptionally(failure);
+        });
     }
 
     private void ensureStarted() throws IOException {

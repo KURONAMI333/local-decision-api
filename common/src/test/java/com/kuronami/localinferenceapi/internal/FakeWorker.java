@@ -18,6 +18,10 @@ public final class FakeWorker {
                 case "crash" -> { return; }
                 case "error" -> WorkerClient.writeFrame(output, "{\"error\":\"input too long\"}");
                 default -> {
+                    if (args[0].equals("reject-selected-input") && request.get("context").getAsString().equals("reject this input")) {
+                        WorkerClient.writeFrame(output, "{\"error\":\"input too long\"}");
+                        continue;
+                    }
                     int count = request.getAsJsonArray("choices").size() + 1;
                     var probabilities = new com.google.gson.JsonArray();
                     var logits = new com.google.gson.JsonArray();

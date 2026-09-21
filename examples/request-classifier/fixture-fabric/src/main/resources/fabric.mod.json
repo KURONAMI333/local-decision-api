@@ -12,6 +12,9 @@
   "entrypoints": {
     "main": [
       "com.kuronami.inferencefixture.FixtureMod"
+    ],
+    "client": [
+      "com.kuronami.inferencefixture.FixtureClient"
     ]
   },
   "depends": {

@@ -22,6 +22,7 @@ neoForge {
         }
         client {
             client()
+            if (providers.gradleProperty('clientSmoke').isPresent()) systemProperty('inferenceexample.clientSmoke', 'true')
         }
         data {
             data()
@@ -55,3 +56,5 @@ if (providers.gradleProperty('localInferenceNeoForgeRuntime').isPresent()) {
 
 base { archivesName = 'inference-shared-fixture-neoforge-1.21.1' }
 sourceSets.main.java.srcDir rootProject.file('fixture-common/src/main/java')
+
+sourceSets.main.java.srcDir rootProject.file('fixture-client/src/main/java')

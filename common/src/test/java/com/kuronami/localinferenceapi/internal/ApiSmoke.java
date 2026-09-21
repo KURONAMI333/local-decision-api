@@ -15,7 +15,7 @@ public final class ApiSmoke {
         if (args.length != 1) throw new IllegalArgumentException("Pass an isolated game directory");
         long start = System.nanoTime();
         Path directory = Path.of(args[0]);
-        LocalInference.initialize(directory);
+        InferenceLifecycle.initialize(directory);
         try {
             var first = LocalInference.decide(request("I lost my wallet and need to block my debit card."));
             var second = LocalInference.decide(request("I cannot remember my login password. Please reset it."));
@@ -27,20 +27,27 @@ public final class ApiSmoke {
                 throw new AssertionError("Invalid score dimensions");
             var children = ProcessHandle.current().children().filter(ProcessHandle::isAlive).toList();
             if (children.size() != 1) throw new AssertionError("Expected one shared worker: " + children.size());
-            LocalInference.close();
+            InferenceLifecycle.endSession();
             children.getFirst().onExit().get(15, TimeUnit.SECONDS);
+            var menuResult = LocalInference.decide(request("I cannot remember my login password. Please reset it.")).get(240, TimeUnit.SECONDS);
+            if (!Integer.valueOf(1).equals(menuResult.selected())) throw new AssertionError("Title/menu request after session end failed");
+            var menuChildren = ProcessHandle.current().children().filter(ProcessHandle::isAlive).toList();
+            if (menuChildren.size() != 1 || menuChildren.getFirst().pid() == children.getFirst().pid())
+                throw new AssertionError("Menu request did not lazily start a fresh single worker");
+            InferenceLifecycle.shutdown();
+            menuChildren.getFirst().onExit().get(15, TimeUnit.SECONDS);
             if (!LocalInference.decide(request("closed")).isCompletedExceptionally())
                 throw new AssertionError("close did not reject the next request");
-            LocalInference.initialize(directory);
+            InferenceLifecycle.initialize(directory);
             var reopened = LocalInference.decide(request("I cannot remember my login password. Please reset it.")).get(240, TimeUnit.SECONDS);
             if (!Integer.valueOf(1).equals(reopened.selected())) throw new AssertionError("Reopen regression");
             var newChildren = ProcessHandle.current().children().filter(ProcessHandle::isAlive).toList();
             if (newChildren.size() != 1 || newChildren.getFirst().pid() == children.getFirst().pid())
                 throw new AssertionError("A fresh single worker was not launched");
-            LocalInference.close();
+            InferenceLifecycle.shutdown();
             newChildren.getFirst().onExit().get(15, TimeUnit.SECONDS);
-            System.out.println("API_SMOKE_PASS concurrentRequests=2 sharedWorker=1 close=true reopen=true");
+            System.out.println("API_SMOKE_PASS concurrentRequests=2 sharedWorker=1 close=true menuAfterEnd=true reopen=true");
             System.out.println("elapsed-seconds=" + (System.nanoTime() - start) / 1_000_000_000.0);
-        } finally { LocalInference.close(); }
+        } finally { InferenceLifecycle.shutdown(); }
     }
 }
