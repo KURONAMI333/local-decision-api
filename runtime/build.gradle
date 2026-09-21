@@ -1,0 +1,45 @@
+plugins { id 'java'; id 'com.github.johnrengelman.shadow' version '8.1.1' }
+repositories { mavenCentral() }
+dependencies {
+ implementation 'org.graalvm.polyglot:polyglot:25.0.1'
+ implementation 'org.graalvm.polyglot:python-community:25.0.1'
+ implementation 'com.microsoft.onnxruntime:onnxruntime:1.30.0'
+ implementation 'ai.djl.huggingface:tokenizers:0.38.0'
+ implementation 'org.slf4j:slf4j-simple:2.0.17'
+}
+java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
+tasks.register('verifyModel') {
+ doLast {
+  ['model.onnx':'4ae01f822538b000fa0e55859d4b3e6b40871d860149397e8784428b2a42ee5e',
+   'tokenizer.json':'8bb449eb0c037aae44115b65905bb339b8f3f74eb37067c19127feb3c0755723',
+   'calibrator.json':'af2a876993148efa0726b6ccf710fe2303897d20c0ce8c7c9036eb50f64d23de'].each { name, expected ->
+   def model = file('models/' + name)
+   if (!model.isFile()) throw new GradleException('Missing pinned model file. See runtime/MODEL.md: ' + name)
+   def digest = java.security.MessageDigest.getInstance('SHA-256')
+   model.withInputStream { input -> byte[] buffer = new byte[1048576]; int n; while ((n = input.read(buffer)) != -1) digest.update(buffer, 0, n) }
+   if (digest.digest().encodeHex().toString() != expected) throw new GradleException('Model file checksum mismatch: ' + name)
+  }
+ }
+}
+tasks.register('dependencyNotices') {
+ outputs.dir(layout.buildDirectory.dir('notices'))
+ doLast {
+  configurations.runtimeClasspath.files.findAll { it.name.endsWith('.jar') }.each { dependency ->
+   copy { from zipTree(dependency); include '**/*LICENSE*', '**/*NOTICE*', '**/*COPYING*'; into layout.buildDirectory.dir('notices/third-party/' + dependency.name) }
+  }
+ }
+}
+processResources {
+ dependsOn 'verifyModel', 'dependencyNotices'
+ from('models') { into 'som/model' }
+ from(layout.buildDirectory.dir('notices'))
+ from('MODEL.md') { into 'third-party/model' }
+}
+shadowJar {
+ archiveFileName = 'runtime.jar'
+ exclude 'module-info.class', 'META-INF/versions/**/module-info.class', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
+ exclude '**/*.dSYM/**'
+ mergeServiceFiles()
+ manifest { attributes 'Main-Class': 'com.kuronami.somcore.runtime.Worker', 'Multi-Release': 'true' }
+ zip64 = true
+}
