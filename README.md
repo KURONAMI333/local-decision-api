@@ -42,7 +42,7 @@ Install the matching full Fabric or NeoForge MOD JAR in your test game's `mods/`
 Inside `fabric.mod.json`’s existing `depends` object:
 
 ```json
-"localinferenceapi": ">=0.1.0"
+"localinferenceapi": "=0.1.0"
 ```
 
 ```toml
@@ -50,7 +50,7 @@ Inside `fabric.mod.json`’s existing `depends` object:
 [[dependencies.yourmod]]
 modId = "localinferenceapi"
 type = "required"
-versionRange = "[0.1.0,)"
+versionRange = "[0.1.0]"
 ordering = "AFTER"
 side = "BOTH"
 ```

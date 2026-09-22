@@ -19,6 +19,6 @@
     "fabric-api": "*",
     "minecraft": "${minecraft_version}",
     "java": ">=${java_version}",
-    "localinferenceapi": ">=0.1.0"
+    "localinferenceapi": "=0.1.0"
   }
 }
