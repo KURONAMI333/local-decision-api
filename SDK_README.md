@@ -14,7 +14,7 @@ With JDK 21, enter `example/` and run:
 
 On Windows, use `gradlew.bat` and an absolute path to `maven`. The normal example artifacts are under `fabric/build/libs/` and `neoforge/build/libs/`. Install the matching example JAR alongside the full library MOD, then use `/inferenceexample It is too dark. I need a torch.`
 
-The `fixture-*` projects are developer verification tools, not normal player downloads. Do not add failure-test flags to a player's installation.
+The kit contains only the example MOD; internal verification fixtures are not part of this download.
 
 ## Integrate your own MOD
 

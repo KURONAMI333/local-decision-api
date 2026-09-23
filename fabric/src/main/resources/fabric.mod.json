@@ -9,6 +9,10 @@
   ],
   "license": "${license}",
   "icon": "logo.png",
+  "contact": {
+    "homepage": "https://www.curseforge.com/minecraft/mc-mods/local-inference-api",
+    "sources": "https://github.com/KURONAMI333/local-inference-api"
+  },
   "environment": "*",
   "entrypoints": {
     "main": [

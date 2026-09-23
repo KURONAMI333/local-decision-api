@@ -19,6 +19,8 @@ tasks.register('developerKit', Zip) {
     from(layout.buildDirectory.dir('developer-repository')) { into 'maven' }
     from('examples/request-classifier') {
         into 'example'
-        exclude '**/build/**', '**/.gradle/**', '**/run/**', '**/runs/**', '**/libs/**', '**/*.log', '**/.DS_Store'
+        exclude '**/build/**', '**/.gradle/**', '**/run/**', '**/runs/**', '**/libs/**', '**/*.log', '**/.DS_Store', 'fixture-*/**', 'README.md', 'settings.gradle'
     }
+    from('SDK_EXAMPLE_README.md') { into 'example'; rename { 'README.md' } }
+    from('SDK_EXAMPLE_SETTINGS.gradle') { into 'example'; rename { 'settings.gradle' } }
 }
