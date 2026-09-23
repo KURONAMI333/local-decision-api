@@ -25,3 +25,11 @@ runs
 
 
 /runtime/models/
+
+# Internal logo research and comparison rounds; only an approved final icon is published.
+/branding/gate0/
+/branding/CAMPAIGN_LEDGER.md
+/branding/icon-candidates/
+/branding/icon-candidates-r2/
+/branding/icon-candidates-r3/
+/branding/__pycache__/
