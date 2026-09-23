@@ -32,4 +32,6 @@ runs
 /branding/icon-candidates/
 /branding/icon-candidates-r2/
 /branding/icon-candidates-r3/
+/branding/icon-candidates-r4/
+/branding/render_local_inference_api_icons*.py
 /branding/__pycache__/

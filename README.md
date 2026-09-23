@@ -6,7 +6,7 @@ A library mod that lets other mods submit a context, a question, and a list of c
 
 ## Status
 
-Unpublished initial library build for Minecraft **1.21.1**, **Fabric and NeoForge**, **Java 21+**. The current model is an INT8 per-channel derivative of the first Verdict 151M checkpoint; it is a technical test model, not an approved general-purpose game decision maker. It has produced incorrect action choices. Evaluate it on your own task before relying on its output.
+Initial release for Minecraft **1.21.1**, **Fabric and NeoForge**, **Java 21+**. The current model is an INT8 per-channel derivative of the first Verdict 151M checkpoint; it is a technical test model, not an approved general-purpose game decision maker. It has produced incorrect action choices. Evaluate it on your own task before relying on its output.
 
 macOS Apple Silicon and Windows x64 have been exercised. Windows checks used production Fabric and NeoForge dedicated servers, an empty inference cache, no Python on PATH, Japanese/space-containing paths and a network-blocked test JVM. These checks do not cover every graphical launcher. Linux x64/arm64 native libraries are bundled but untested. Intel Macs are not supported by the current bundle. The INT8 distribution JAR is approximately 392–394 MB. On macOS arm64, the standalone worker used approximately 850 MB peak RSS; this is not total Minecraft memory usage.
 
@@ -33,7 +33,7 @@ dependencies {
 
 Pass `-PlocalInferenceRepository=/absolute/path/to/local-inference-api/build/developer-repository`. This repository has not been published online. The API JAR is only for compilation and must not be installed or bundled as a replacement for the full MOD.
 
-A self-contained developer ZIP can be created with `./gradlew developerKit`; it includes this Maven artifact and independent example sources.
+A self-contained [developer kit ZIP](https://github.com/KURONAMI333/local-inference-api/releases/tag/v0.1.0) is attached to the release; it includes this Maven artifact and independent example sources. It can also be built with `./gradlew developerKit`.
 
 See [the independent example mod](examples/request-classifier/README.md) for Fabric and NeoForge integration.
 
@@ -103,7 +103,7 @@ LocalInference.decide(request).whenComplete((result, failure) -> {
 
 The common unit tests cover queue limits, worker reuse, shutdown, timeouts, protocol validation, and cache repair. `python3 runtime/tools/smoke.py runtime/build/libs/runtime.jar` exercises the real model; on macOS it also denies network access with the OS sandbox.
 
-This build has not been published. The pinned model has passed a small quantization regression suite, but broader gameplay evaluation remains open. See runtime/MODEL.md for known errors and verification limits.
+The pinned model has passed a small quantization regression suite, but broader gameplay evaluation remains open. See runtime/MODEL.md for known errors and verification limits.
 
 ## License and upstream credits
 
