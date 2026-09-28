@@ -1,16 +1,16 @@
-**Local Decision API is a library for other Minecraft mods.** A compatible mod provides a situation and a set of possible answers or a rating scale. This mod runs a model on the machine running the game and returns a choice or rating for that request. For example, another mod could provide three possible actions and receive one choice; that mod decides what those actions are and how to use the result. Local Decision API adds no items, blocks, mobs, or standalone gameplay.
+**Local Decision API is a library for other Minecraft mods.** A compatible mod describes a situation and provides a set of options or a rating scale; this mod returns one choice or rating, computed by a small model on the machine running the game.
 
-This is for bounded decisions supplied by the calling mod. It is not a chatbot or a general-purpose game assistant. Results can be wrong; the calling mod decides what to do with them and provides a fallback.
+For example, a mod can pass three candidate actions and get one of them back; what the candidates mean and what happens with the answer stays with the calling mod. Each request is bounded: the model weighs only the candidates or scale it is given. Answers can be wrong, so the calling mod is expected to judge results and keep its own fallback.
 
 ### Where it runs
 
-Requests are processed on the machine running the mod — a player's PC, or a dedicated or self-hosted server when a server-side mod calls it — with no cloud AI account. On first use the mod downloads about 3.1 GB of hash-pinned model and runtime files into the game directory; after they are cached it works offline. To skip the download entirely and use only the bundled fallback, launch with `-Dlocalinferenceapi.som.native=false`. The JAR itself is about 450 MB because it includes that fallback model. The inference worker runs outside Minecraft's Java heap, but it still uses the host machine's RAM and, when available, GPU memory.
+Everything is processed on the machine running the mod, with no cloud account or external AI service. On first use the mod downloads about 3.1 GB of hash-pinned model and runtime files into the game directory; once cached it also works offline. To skip that download and use only the bundled fallback model, launch with `-Dlocalinferenceapi.som.native=false`. The JAR itself is about 450 MB because it contains that fallback. The inference worker runs outside Minecraft's Java heap, but still uses the machine's RAM and, when available, GPU memory.
 
-Platform coverage is uneven. The native path has been exercised end to end on Apple Silicon Macs and on a Windows x64 dedicated server; the integrated singleplayer client, macOS x64, and CPU-only Windows machines are unverified, and failures there fall back to the bundled CPU worker. Linux has no native runtime — the bundled fallback always answers. On a server, the host must allow the roughly 3.1 GB download and a spawned worker process; a shared or free host that blocks either leaves the library unable to answer.
+The primary model path has been exercised end to end on Apple Silicon Macs and on a Windows x64 dedicated server. It is not yet verified inside the singleplayer client, and on Linux there is no such runtime at all; wherever the primary path cannot start, the bundled fallback answers instead with reduced quality. On a server, the host must allow the roughly 3.1 GB download and a spawned worker process; a shared or free host that blocks either leaves the library unable to answer.
 
-### Who needs it
+### Installing and developing
 
-Install this mod when another mod lists Local Decision API as a dependency. Installing it alone does not change gameplay. Mod developers can use the public API and example in the developer kit; see the source repository for integration details.
+Install this mod when another mod lists it as a dependency. Mod developers integrate through the public API, a compile-only dependency exposing `decide` (pick one of the given choices), `score` (rate on an ordered scale), and `noul` (estimate the probability that a statement holds). The developer kit in the source repository includes a runnable example mod.
 
 ### Limits and licenses
 
