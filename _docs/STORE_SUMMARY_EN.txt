@@ -1,0 +1,1 @@
+Helps compatible mods choose between predefined options or rate a situation, on the machine running the game. Adds no gameplay by itself.

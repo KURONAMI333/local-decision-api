@@ -1,6 +1,6 @@
 # som-pin — SOM publisher pin packet (dev tooling)
 
-**Status (1.0.0 candidate): the packet bytes have been promoted into the
+**Status (1.0.0): the packet bytes have been promoted into the
 shipped classpath.** The canonical copies now live at
 `common/src/main/resources/localinferenceapi/som/` (`manifest.json` +
 `licenses/*`), packaged into the loader jars. This directory keeps only the

@@ -6,9 +6,9 @@ A library mod that lets other mods submit a context, a question, and a list of c
 
 ## Status
 
-The 1.0.0 candidate targets Minecraft **1.21.1**, **Fabric and NeoForge**, **Java 21+**. The primary inference path runs **JevK5-4B v0.3 (Q5_K_M)** through a pinned **llama.cpp `llama-server`** process outside the Minecraft JVM; the MOD automatically stages the hash-pinned runtime and model into the game directory on first use. If the native worker is unavailable or still starting, the bundled **Laya Typed-Decisions** ONNX worker inside the same JAR serves requests as a degraded fallback. This version is still under evaluation and has not been published. The public 0.1.0 release remains a Choice-only Verdict prototype. Model probabilities are not well-calibrated truth, and gameplay or language quality is not guaranteed.
+Local Decision API 1.0.0 targets Minecraft **1.21.1**, **Fabric and NeoForge**, **Java 21+**. The primary inference path runs **JevK5-4B v0.3 (Q5_K_M)** through a pinned **llama.cpp `llama-server`** process outside the Minecraft JVM; the MOD automatically stages the hash-pinned runtime and model into the game directory on first use. If the native worker is unavailable or still starting, the bundled **Laya Typed-Decisions** ONNX worker inside the same JAR serves requests as a degraded fallback. The earlier 0.1.0 release remains a Choice-only Verdict prototype. Model probabilities are not well-calibrated truth, and gameplay or language quality is not guaranteed.
 
-On this branch the full native path — manifest verification, staged download with SHA-256 pins, archive extraction, `llama-server` launch on loopback with a per-launch API key, Choice/Score/Noul readout, restart, offline cache and idle unload — has been exercised end to end on **macOS Apple Silicon** only. The bundled ONNX fallback has passed standalone Java worker tests and dedicated-server inference on macOS and Windows x64 for both loaders (see runtime/MODEL.md for those measurements). **Windows and Linux native-path runs, and all integrated-client tests of the native path, remain unverified.** The two loader JARs remain roughly 450 MB because the ONNX fallback is bundled; the native model is not inside the JAR.
+The full native path — manifest verification, staged download with SHA-256 pins, archive extraction, `llama-server` launch on loopback with a per-launch API key, Choice/Score/Noul readout, restart, offline cache and idle unload — has been exercised end to end on **macOS Apple Silicon**, and on a **Windows x64 dedicated server** answering two connected clients. The bundled ONNX fallback has passed standalone Java worker tests and dedicated-server inference on macOS and Windows x64 for both loaders (see runtime/MODEL.md for those measurements). **Still unverified:** the native path inside the integrated (singleplayer) client on any OS, macOS x64, CPU-only Windows machines, and Linux — which has no native runtime at all, so the bundled fallback always serves there. The two loader JARs remain roughly 450 MB because the ONNX fallback is bundled; the native model is not inside the JAR.
 
 ## For players
 
@@ -16,7 +16,7 @@ On this branch the full native path — manifest verification, staged download w
 
 - The JAR itself is large (about 450 MB) because it bundles a fallback model.
 - On first use the MOD downloads about **3.1 GB** of hash-pinned files (the JevK5 model and the llama.cpp runtime) into the game directory. A one-time internet connection is required for that fetch; play works offline afterwards. To use only the bundled fallback and skip the download entirely, launch with `-Dlocalinferenceapi.som.native=false`.
-- Platform coverage is uneven today. The native path has been verified end to end **only on Apple Silicon Macs**. On **Windows** the runtime downloads but launching it is not yet verified — failures degrade to the bundled fallback. On **Linux** there is no native runtime at all and the bundled CPU fallback always serves requests. The native path in the **integrated (singleplayer) client** is also unverified; dedicated-server and standalone use is the better-tested route.
+- Platform coverage is uneven. The native path has been run end to end on Apple Silicon Macs and on a Windows x64 dedicated server. On **Linux** there is no native runtime at all and the bundled CPU fallback always serves requests. The native path is unverified in the **integrated (singleplayer) client**, on macOS x64, and on Windows machines without a compatible GPU; where it cannot start, the bundled fallback answers instead.
 - On a dedicated or rented server, everything runs on the machine hosting Minecraft — the download, the model files, and the worker process. The host must allow roughly 3.1 GB of outbound downloads and a spawned worker process; a shared host that blocks either leaves the library unable to answer.
 
 Install the JAR matching your Minecraft loader in `mods/`. Minecraft and the loader must already be installed. Fabric API is included in the Fabric JAR.
@@ -38,7 +38,7 @@ dependencies {
 }
 ```
 
-Pass `-PlocalInferenceRepository=/absolute/path/to/local-inference-api/build/developer-repository`. This repository has not been published online. The API JAR is only for compilation and must not be installed or bundled as a replacement for the full MOD.
+Pass `-PlocalInferenceRepository=/absolute/path/to/local-inference-api/build/developer-repository`. The API artifact is not published to a public Maven repository — it ships inside the developer kit. The API JAR is only for compilation and must not be installed or bundled as a replacement for the full MOD.
 
 The 1.0.0 developer kit can be built with `./gradlew developerKit`. The [published 0.1.0 kit](https://github.com/KURONAMI333/local-inference-api/releases/tag/v0.1.0) is for the old API and model.
 
@@ -108,7 +108,7 @@ LocalInference.decide(request).whenComplete((result, failure) -> {
 
 The common unit tests cover queue limits, worker reuse, shutdown, timeouts, protocol validation, and cache repair. `python3 runtime/tools/smoke.py runtime/build/libs/runtime.jar` exercises the bundled fallback model; on macOS it also denies network access with the OS sandbox. The native-path smoke test (`LlamaNativeSmokeTest`) launches the pinned `llama-server` against the real pinned model and is gated on machine-local assets supplied through `SOM_TEST_LOCAL_MAP`; without them it is skipped.
 
-Broader gameplay evaluation, Windows and Linux native-path runs, and integrated-client testing of the native path remain open. See runtime/MODEL.md for the bundled fallback's measurements and limits.
+Broader gameplay evaluation and native-path runs on the integrated client, macOS x64, and CPU-only Windows remain open; Linux ships no native runtime and always uses the bundled fallback. See runtime/MODEL.md for the bundled fallback's measurements and limits.
 
 ## License and upstream credits
 
