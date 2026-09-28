@@ -18,4 +18,4 @@ Source: https://github.com/KURONAMI333/local-decision-api
 
 Bugs and questions: comment on the CurseForge page, or reach me on [X](https://x.com/kuronami333).
 
-<p><a href="https://www.patreon.com/KURONAMI333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/patreon.png" width="440" height="156" alt="Support my mods on Patreon"></a> <a href="https://x.com/kuronami333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/x.png" width="300" height="156" alt="Follow @kuronami333 on X"></a></p>
+[Support my mods on Patreon](https://www.patreon.com/KURONAMI333)
