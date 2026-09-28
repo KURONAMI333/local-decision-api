@@ -1,6 +1,6 @@
-**Local Decision API lets Minecraft mods make bounded decisions from game state.** For example, a companion mod could submit “follow the player,” “return home,” and “fight” alongside the current situation, then decide how to act on the selected option. Authors can also ask for a rating on a scale or the likelihood of a statement.
+**A library for mods that need to make a choice.** A companion mod, for example, can send “follow the player,” “return home,” and “fight” along with what is happening in the game. Local Decision API returns a choice; the companion mod decides what to do with it. It can also return a score or estimate how likely a statement is.
 
-This is a library for mod authors. If a mod you use lists Local Decision API as a dependency, install it alongside that mod. Authors can start with the [developer kit and working example](https://github.com/KURONAMI333/local-decision-api/releases/tag/v1.0.0) or read the [integration guide](https://github.com/KURONAMI333/local-decision-api#for-mod-developers).
+If a mod you use lists Local Decision API as a dependency, install it alongside that mod. Mod authors can start with the [developer kit and working example](https://github.com/KURONAMI333/local-decision-api/releases/tag/v1.0.0) or read the [integration guide](https://github.com/KURONAMI333/local-decision-api#for-mod-developers).
 
 ### The model
 
@@ -15,6 +15,7 @@ The Java API offers `decide` for choosing from supplied options, `score` for rat
 The public API and developer example are MIT licensed. The implementation is All Rights Reserved with permission for normal mod dependencies and modpack use. JevK5 and other third-party components retain their own terms; see [LICENSE](https://github.com/KURONAMI333/local-decision-api/blob/main/LICENSE), [LICENSING.md](https://github.com/KURONAMI333/local-decision-api/blob/main/LICENSING.md), and [THIRD_PARTY.md](https://github.com/KURONAMI333/local-decision-api/blob/main/THIRD_PARTY.md).
 
 Source: https://github.com/KURONAMI333/local-decision-api
+
 Bugs and questions: comment on the CurseForge page, or reach me on [X](https://x.com/kuronami333).
 
 <p><a href="https://www.patreon.com/KURONAMI333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/patreon.png" width="440" height="156" alt="Support my mods on Patreon"></a> <a href="https://x.com/kuronami333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/x.png" width="300" height="156" alt="Follow @kuronami333 on X"></a></p>
