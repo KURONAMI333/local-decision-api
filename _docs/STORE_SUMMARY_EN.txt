@@ -1,1 +1,1 @@
-Helps compatible mods choose between predefined options or rate a situation, on the machine running the game.
+Helps compatible mods choose from options they supply or rate a situation using a model on the game host.

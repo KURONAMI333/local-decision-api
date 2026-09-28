@@ -1,10 +1,10 @@
-**Local Decision API is a library for other Minecraft mods.** A compatible mod describes a situation and provides a set of options or a rating scale; this mod returns one choice or rating, computed by a small model on the machine running the game.
+**Local Decision API is a library for other Minecraft mods.** A compatible mod describes a situation and provides a set of options or a rating scale; this mod returns one choice or rating from a small model.
 
 For example, a mod can pass three candidate actions and get one of them back; what the candidates mean and what happens with the answer stays with the calling mod. Each request is bounded: the model weighs only the candidates or scale it is given. Answers can be wrong, so the calling mod is expected to judge results and keep its own fallback.
 
 ### Where it runs
 
-Everything is processed on the machine running the mod, with no cloud account or external AI service. On first use the mod downloads about 3.1 GB of hash-pinned model and runtime files into the game directory; once cached it also works offline. To skip that download and use only the bundled fallback model, launch with `-Dlocalinferenceapi.som.native=false`. The JAR itself is about 450 MB because it contains that fallback. The inference worker runs outside Minecraft's Java heap, but still uses the machine's RAM and, when available, GPU memory.
+Inference runs on the computer or server hosting the game, without a cloud account or external AI service. On first use the mod downloads about 3.1 GB of hash-pinned model and runtime files into the game directory; once cached it also works offline. To skip that download and use only the bundled fallback model, launch with `-Dlocalinferenceapi.som.native=false`. The JAR itself is about 450 MB because it contains that fallback. The inference worker runs outside Minecraft's Java heap, but still uses the machine's RAM and, when available, GPU memory.
 
 The primary model path has been exercised end to end on Apple Silicon Macs and on a Windows x64 dedicated server. It is not yet verified inside the singleplayer client, and on Linux there is no such runtime at all; wherever the primary path cannot start, the bundled fallback answers instead with reduced quality. On a server, the host must allow the roughly 3.1 GB download and a spawned worker process; a shared or free host that blocks either leaves the library unable to answer.
 
