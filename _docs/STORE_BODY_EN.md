@@ -17,6 +17,6 @@ Install this mod when another mod lists it as a dependency. Mod developers integ
 Choices and ratings are model outputs, not verified facts or permission checks. The public API and developer example are MIT licensed; the internal implementation is All Rights Reserved with permission for normal mod dependencies and modpack use. Bundled models and other dependencies keep their own licenses. See the distributed LICENSE, LICENSING.md, and THIRD_PARTY.md for the exact terms.
 
 Source: https://github.com/KURONAMI333/local-inference-api
-Bugs and questions: comment on the CurseForge page, or @kuronami333 on X.
+Bugs and questions: comment on the CurseForge page, or reach me on [X](https://x.com/kuronami333).
 
-[![Support my mods on Patreon](https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/patreon.png)](https://www.patreon.com/KURONAMI333) [![Follow @kuronami333 on X](https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/x.png)](https://x.com/kuronami333)
+<p><a href="https://www.patreon.com/KURONAMI333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/patreon.png" width="440" height="156" alt="Support my mods on Patreon"></a> <a href="https://x.com/kuronami333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/x.png" width="300" height="156" alt="Follow @kuronami333 on X"></a></p>
