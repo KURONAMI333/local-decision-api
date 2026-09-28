@@ -1,18 +1,18 @@
 plugins { id 'java'; id 'com.github.johnrengelman.shadow' version '8.1.1' }
 repositories { mavenCentral() }
 dependencies {
- implementation 'org.graalvm.polyglot:polyglot:25.0.1'
- implementation 'org.graalvm.polyglot:python-community:25.0.1'
  implementation 'com.microsoft.onnxruntime:onnxruntime:1.30.0'
  implementation 'ai.djl.huggingface:tokenizers:0.38.0'
+ implementation 'com.google.code.gson:gson:2.10.1'
  implementation 'org.slf4j:slf4j-simple:2.0.17'
 }
 java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
 tasks.register('verifyModel') {
  doLast {
-  ['model.onnx':'4b4c4bdb608bbbcb719daf3f7301bae50bc020f046f8d1620f9a4f7471f5baf9',
-   'tokenizer.json':'8bb449eb0c037aae44115b65905bb339b8f3f74eb37067c19127feb3c0755723',
-   'calibrator.json':'af2a876993148efa0726b6ccf710fe2303897d20c0ce8c7c9036eb50f64d23de'].each { name, expected ->
+  ['laya_q8e8.onnx':'599756d6506db9659279f4ac7871045801f90539844fbda6cd2918b6316e2d07',
+   'laya_q8e8.onnx.data':'e5ac4bfe0503361dacac825a91a82ae860e3a5d38dfb021dcf0bd37369573b44',
+   'laya-tokenizer.json':'6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30',
+   'laya-config.json':'ebf0cd524d92342a6be5e48e9fca3d7c2babfb5a56ccd79d2171ef5d8c7f7be8'].each { name, expected ->
    def model = file('models/' + name)
    if (!model.isFile()) throw new GradleException('Missing pinned model file. See runtime/MODEL.md: ' + name)
    def digest = java.security.MessageDigest.getInstance('SHA-256')
@@ -36,6 +36,7 @@ processResources {
  from('MODEL.md') { into 'third-party/model' }
  from('licenses') { into 'third-party/model' }
  from(rootProject.file('LICENSE')) { into 'third-party/local-inference-api' }
+ from(rootProject.file('LICENSING.md')) { into 'third-party/local-inference-api' }
  from(rootProject.file('THIRD_PARTY.md'))
 }
 shadowJar {

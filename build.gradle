@@ -14,6 +14,7 @@ tasks.register('developerKit', Zip) {
     reproducibleFileOrder = true
     from('SDK_README.md') { rename { 'README.md' } }
     from('LICENSE')
+    from('LICENSING.md')
     from('THIRD_PARTY.md')
     from('runtime/MODEL.md') { into 'runtime' }
     from(layout.buildDirectory.dir('developer-repository')) { into 'maven' }

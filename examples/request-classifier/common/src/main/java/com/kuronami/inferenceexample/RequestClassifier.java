@@ -53,8 +53,6 @@ public final class RequestClassifier {
                             if (failure != null) {
                                 current.sendSystemMessage(Component.translatable("inferenceexample.failed"));
                                 LogUtils.getLogger().debug("Example classification failed", failure);
-                            } else if (result.selected() == null) {
-                                current.sendSystemMessage(Component.translatable("inferenceexample.abstained"));
                             } else {
                                 current.sendSystemMessage(Component.translatable("inferenceexample.result",
                                         Component.translatable("inferenceexample." + KEYS.get(result.selected()))));

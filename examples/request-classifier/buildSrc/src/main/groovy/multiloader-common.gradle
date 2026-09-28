@@ -130,4 +130,13 @@ repositories {
         content { includeGroup 'com.kuronami.localinferenceapi' }
     }
 }
-dependencies { compileOnly 'com.kuronami.localinferenceapi:local-inference-api:0.1.0' }
+// The local developer repository is rebuilt repeatedly under the same development version.
+// Revalidate it so consumer bytecode cannot retain an obsolete API method signature.
+configurations.configureEach {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+dependencies {
+    compileOnly('com.kuronami.localinferenceapi:local-inference-api:1.0.0') {
+        changing = true
+    }
+}

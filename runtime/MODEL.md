@@ -1,34 +1,34 @@
-# Bundled model (experimental)
+# Bundled fallback model: Laya Typed-Decisions Q8E8
 
-The runtime bundles a **dynamic INT8 per-channel derivative of the first Verdict GLiClass ModernBERT 151M** checkpoint, published by heman10x. It is not Verdict2 or the Jev service. General gameplay decision quality is not established. The model still selected walking into lava and opening a chest against the owner's instruction in diagnostic cases. Consumers must evaluate their own use case and must not treat scores as safety guarantees.
+In the 1.0.0 candidate this ONNX worker is the **degraded-path fallback**; the primary path is the pinned JevK5-4B v0.3 GGUF served by an external `llama-server` (see `common/src/main/resources/localinferenceapi/som/manifest.json`). This document describes the bundled fallback. The JAR bundles an unofficial ONNX Q8E8 conversion of [Convai Innovations' Laya Typed-Decisions](https://huggingface.co/convaiinnovations/laya-typed-decisions). The converter is [VishalMysore/layaForWebTrained](https://huggingface.co/VishalMysore/layaForWebTrained), pinned at `dd0c52a2b563bea25279e2689689061dd0a1c382`. The source tokenizer and config are pinned to the [Laya family repository](https://huggingface.co/convaiinnovations/laya/tree/1c5edc17a7acd8701df6fc341c0d179f1c62c982/typed-decisions) at `1c5edc17a7acd8701df6fc341c0d179f1c62c982`.
 
-## Source and license
+The model is not created or trained by KURONAMI333. The original and conversion declare Apache-2.0. The conversion's `LICENSE` and `NOTICE.md` are preserved in `runtime/licenses/` and packaged under `third-party/model/`. The bundled ONNX graph uses weight-only int8 and int8 embeddings; it is not bitwise equivalent to upstream FP16. We reassemble the converter's 18 external-data parts at build time, then ship the graph and data in the MOD JAR. Players perform no download or setup.
 
-Upstream: [heman10x/rlcd-modernbert-151m](https://huggingface.co/heman10x/rlcd-modernbert-151m/tree/8af2496eb63c7fa66d7d234e1f62629380030eb4), pinned revision `8af2496eb63c7fa66d7d234e1f62629380030eb4`.
+## Reproducing the bundle
 
-The publisher declares Apache-2.0 and credits `knowledgator/gliclass-modern-base-v2.0` as the base model. The associated [Verdict source repository](https://github.com/Heman10x-NGU/Verdict-open-jev) provides a shortened license file preserved verbatim as `licenses/VERDICT-LICENSE`. The full standard Apache-2.0 text from apache.org is included separately as `licenses/APACHE-2.0.txt`. Both are preserved in the runtime JAR under `third-party/model/`. The model retains its upstream license; Local Inference API's MIT license does not replace it.
+1. Run `python3 runtime/tools/fetch_model.py` from the repository root. This build-time script downloads pinned files and verifies SHA-256. `runtime/models/` is ignored by Git.
+2. Use JDK 21 and run `./gradlew :runtime:shadowJar --no-build-cache`.
+3. Run `python3 runtime/tools/smoke.py runtime/build/libs/runtime.jar`. The clean-cache test checks Choice, Score and Noul against fixed upstream ONNX outputs, request rejection, offline execution and shutdown.
 
-**Modification notice:** Local Inference API quantizes constant MatMul/Gemm weights using ONNX Runtime 1.30.0 dynamic QInt8, per-channel, `MatMulConstBOnly=True`. Tokenizer, calibration and input/output contract are unchanged. No further training was performed. Not every graph operation or weight becomes INT8.
+SHA-256:
 
-## Reproducing the bundled graph
+| File | SHA-256 |
+|---|---|
+| `laya_q8e8.onnx` | `599756d6506db9659279f4ac7871045801f90539844fbda6cd2918b6316e2d07` |
+| `laya_q8e8.onnx.data` | `e5ac4bfe0503361dacac825a91a82ae860e3a5d38dfb021dcf0bd37369573b44` |
+| `laya-tokenizer.json` | `6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30` |
+| `laya-config.json` | `ebf0cd524d92342a6be5e48e9fca3d7c2babfb5a56ccd79d2171ef5d8c7f7be8` |
 
-These are developer-only steps. Players receive all files in their MOD JAR; no runtime download is performed.
+## Measurements and limits
 
-1. Download upstream `model.onnx` at the pinned revision to a separate source directory. Download `tokenizer.json` and `calibrator.json` into `runtime/models/`.
-2. In a Python development environment install `onnx==1.23.0` and `onnxruntime==1.30.0`.
-3. From the project root run `python runtime/tools/quantize_model.py /path/to/upstream/model.onnx runtime/models/model.onnx`.
-4. Build with JDK 21 using `./gradlew :runtime:shadowJar --no-build-cache`. The build checks all three bundled file hashes.
-5. Run `python runtime/tools/smoke.py runtime/build/libs/runtime.jar` with `JAVA_HOME` pointing to JDK 21. It uses a new home and JAR extraction directory, checks 40 regression requests against the pinned Python reference, checks input rejection and shutdown, and denies network access on macOS.
+On a 24 GB Apple M5 Mac, the standalone Java worker running ONNX Runtime 1.30.0 with two CPU threads reached 924,172,288 bytes maximum RSS in a clean offline smoke test. The first-ready time was about 2.6 seconds. This is a **worker-only** peak. Fabric and NeoForge development JARs are about 450 MB each. Distribution size is secondary to runtime RAM use.
 
-The quantization script validates the source and result hashes and runs the ONNX checker. It deliberately uses the original graph directly, without optional preprocessing, to reproduce the tested graph.
+On macOS, the independent example MOD also completed Choice, Score and Noul through the real Minecraft 1.21.1 dedicated server on both Fabric and NeoForge. During one Fabric development-server run after inference, `ps` reported 815,648 KiB RSS for the server JVM and 898,544 KiB for the worker JVM. Their sum is a single server-side snapshot, not a peak or a client-plus-worker measurement. The Gradle daemon is excluded.
 
-- Upstream float32 SHA-256: `4ae01f822538b000fa0e55859d4b3e6b40871d860149397e8784428b2a42ee5e`
-- Bundled INT8 SHA-256: `4b4c4bdb608bbbcb719daf3f7301bae50bc020f046f8d1620f9a4f7471f5baf9`
+The isolated 1.21.1 client lifecycle fixture passed on both Fabric and NeoForge with the ONNX fallback JAR: world inference, disconnection, title-screen inference and a second world in the same JVM. During the Fabric run, 22 paired `ps` samples taken about 0.25 seconds apart showed a highest observed sum of 2,581,392 KiB RSS (client 1,689,536 KiB + worker 891,856 KiB). This is a sampled development client with JEI, not a peak, a typical modpack, or a Windows measurement. No usable NeoForge client memory sample was captured.
 
-## Scope of verification
+On Windows x64/JDK 21, the ONNX-era Fabric and NeoForge distribution JARs each passed in an isolated Minecraft 1.21.1 production dedicated server with an independently built consumer MOD. Choice, Score and Noul completed, world-stop invalidation passed, and both servers exited normally. The tests also passed from empty extraction caches with the test JDK's inbound and outbound network access blocked and Python absent from `PATH`. A standalone Windows worker run matched fixed ONNX outputs for all three primitives. In one warm-cache Fabric server snapshot after inference, server and worker working sets were 780,152,832 and 812,072,960 bytes; the worker process reported 839,127,040 bytes peak working set. These values are not a client measurement, representative modpack usage, or a combined peak. Logs: `_work/som-core-20260922/evidence/onnx-windows-{fabric,neoforge}-offline.log` in the development workspace. Windows integrated clients and Linux remain untested.
 
-On macOS arm64, the 606,323,181-byte graph became 269,468,405 bytes. A Python CPU comparison with two intra-op threads found identical selections on 40 handcrafted requests: existing gameplay diagnostics 20/24, existing classification 4/4, and new request classification 9/12. Each scenario appears with normal and reversed choice order, so these are not 40 independent scenarios. Japanese requests include abstentions and a pre-existing choice-order inconsistency. This is regression evidence, not a general accuracy benchmark. Per-tensor quantization was rejected after one new error.
+A fixed, small Minecraft diagnostic measured Choice 19/24, Score pairwise ranking 22/27 in English and 19/27 in Japanese, Noul ranking 25/27 in English and 20/27 in Japanese. These hand-written cases do not represent overall gameplay accuracy. Upstream explicitly describes Typed-Decisions as English-only and specialized for synthetic business workflows, with uncalibrated confidence. This API exposes model probabilities for ranking, but callers must not treat them as calibrated truth or a safety/permission mechanism. Laya does not provide an independent abstention slot. Score is a probability-weighted mean of caller-supplied ordered values; Noul is P(true) within a forced binary question. As in the reference SDK's `build_sequence`, options are shortened to 48 model tokens and a question that exceeds the 256-token head budget is deterministically shortened rather than rejected; affected responses carry `"truncated": true`, which also surfaces on the public result records.
 
-The graph runs on CPU using ONNX Runtime 1.30.0, two intra-op threads and one inter-op thread. Python orchestration uses GraalPy 25.0.1. JNI artifacts contain Windows x64, Linux x64/arm64 and macOS arm64; platform support must be established by distribution testing, not by the presence of native files. Intel Mac support is not claimed.
-
-Inputs allow 1–24 substantive choices, with an additional abstention slot. Inputs above 512 tokens are rejected rather than silently truncated. Calibrated probabilities use the upstream calibration file; calibration on Minecraft tasks, particularly after quantization, has not been established.
+The 0.1.0 public release uses a different Verdict model and API contract. This 1.0.0 candidate is not published yet. The same ONNX backend is used on Windows and macOS. No separate macOS MLX or Core ML execution path is planned for the fallback worker.

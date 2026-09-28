@@ -11,9 +11,19 @@ public final class LocalInference {
      * 判定を要求する。完了callbackのゲームスレッド実行は保証しない。
      * ワールド変更はゲームスレッドへ移し、対象のworld/playerが今も有効か再確認すること。
      * @param request 変更不能なcontext・question・choices
-     * @return 候補indexまたは棄権を含む結果。混雑・故障・終了時は例外完了する
+     * @return 候補indexと確率。混雑・故障・終了時は例外完了する
      */
     public static CompletableFuture<DecisionResult> decide(DecisionRequest request) {
         return InferenceLifecycle.decide(request);
+    }
+
+    /** 順序付き尺度で評価する。段階valueの確率加重平均を返す。 */
+    public static CompletableFuture<ScoreResult> score(ScoreRequest request) {
+        return InferenceLifecycle.score(request);
+    }
+
+    /** 命題のモデル内の真確率を求める。実世界での較正は未保証。 */
+    public static CompletableFuture<NoulResult> noul(NoulRequest request) {
+        return InferenceLifecycle.noul(request);
     }
 }

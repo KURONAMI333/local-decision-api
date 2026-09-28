@@ -25,6 +25,8 @@ loom {
             client()
             if (providers.gradleProperty('clientSmoke').isPresent()) property('inferenceexample.clientSmoke', 'true')
             if (providers.gradleProperty('exampleSmoke').isPresent()) property('inferenceexample.smoke', 'true')
+            if (providers.gradleProperty('joinServer').isPresent()) programArgs '--quickPlayMultiplayer', providers.gradleProperty('joinServer').get()
+            if (providers.gradleProperty('playerName').isPresent()) programArgs '--username', providers.gradleProperty('playerName').get()
             setConfigName('Fabric Client')
             ideConfigGenerated(true)
             runDir('runs/client')

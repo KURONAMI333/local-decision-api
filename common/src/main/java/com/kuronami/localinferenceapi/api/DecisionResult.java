@@ -2,15 +2,19 @@ package com.kuronami.localinferenceapi.api;
 
 import java.util.List;
 
-/** selected は 0 始まり。null はモデルが選択を保留したことを表す。各 score リストの末尾は保留のスコア。 */
-public record DecisionResult(Integer selected, List<Double> probabilities, List<Double> logits) {
+/** selected は 0 始まり。確率とlogitは各候補に対応する。truncated は入力がモデルの制約に合わせて短縮された印。 */
+public record DecisionResult(Integer selected, List<Double> probabilities, List<Double> logits, boolean truncated) {
+    public DecisionResult(Integer selected, List<Double> probabilities, List<Double> logits) {
+        this(selected, probabilities, logits, false);
+    }
+
     public DecisionResult {
         probabilities = List.copyOf(probabilities);
         logits = List.copyOf(logits);
-        if (probabilities.size() < 2 || probabilities.size() > 25 || probabilities.size() != logits.size()) {
+        if (probabilities.isEmpty() || probabilities.size() > 24 || probabilities.size() != logits.size()) {
             throw new IllegalArgumentException("Invalid result dimensions");
         }
-        if (selected != null && (selected < 0 || selected >= probabilities.size() - 1)) {
+        if (selected == null || selected < 0 || selected >= probabilities.size()) {
             throw new IllegalArgumentException("Invalid selected index");
         }
         for (double probability : probabilities) {

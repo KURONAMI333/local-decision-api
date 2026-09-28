@@ -13,3 +13,6 @@
 *.pyd binary
 *.cfg text eol=lf
 *.jks binary
+# som pin packet: manifest.json の pin digest と license bytes の sha256 は
+# 上流 bytes を固定する。改行変換されると digest が壊れるので text 化しない。
+common/src/main/resources/localinferenceapi/som/** -text

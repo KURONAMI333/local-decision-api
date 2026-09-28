@@ -1,17 +1,18 @@
 # Third-party components and attribution
 
-Local Inference API's original Java/Python code, public API, examples and documentation are licensed under MIT. The root LICENSE applies to that work, not to separately licensed models or dependencies. Bundling a component does not transfer its authorship to KURONAMI333.
+Local Decision API's public API sources (`com.kuronami.localinferenceapi.api`) and developer-kit example are MIT licensed; the internal implementation is All Rights Reserved. The file-level scope is in LICENSING.md and the terms in LICENSE. Neither relicenses models or dependencies.
 
-## Model
+## Models
 
-The prototype bundles **heman10x's first Verdict / OpenJev GLiClass ModernBERT 151M checkpoint**, from [heman10x/rlcd-modernbert-151m](https://huggingface.co/heman10x/rlcd-modernbert-151m), revision `8af2496eb63c7fa66d7d234e1f62629380030eb4`. It is not Verdict2 or a connection to the Jev service.
+The 1.0.0 candidate uses two local models:
 
-The publisher declares Apache-2.0. Its model card credits the GLiClass ModernBERT base checkpoint (`knowledgator/gliclass-modern-base-v2.0`) and inspiration from TypeSafe AI's Jev and RLCD. These credits describe upstream work, not an affiliation or endorsement of this Minecraft mod.
+- **JevK5-4B v0.3 (Q5_K_M)** — the primary model, fetched once from its pinned upstream revision and staged under `.localinferenceapi/som/` in the game directory. Apache-2.0 per the upstream model card's license field; it builds on the Qwen3.5 base (Apache-2.0) and the SemIf readout approach (MIT). The upstream HF repository carries no standalone LICENSE file — what exists upstream is the card declaration and the NOTICE file. `JEVK5-NOTICE.txt`, shipped in the JAR under `localinferenceapi/som/licenses/` and staged alongside the model, is that upstream NOTICE verbatim from `allebee/jevk5` tag `v0.3.3` (commit `f944fe37ff1d5ed3830aa4c8d88b7189c8c1268a`), sha256-pinned in the manifest. `MODEL-NOTICE.txt` in the same directory is a packager-written attribution stub. None of this is legal advice.
+- **Laya Typed-Decisions (Q8E8 ONNX)** — the bundled fallback model inside the JAR, created by Convai Innovations and contributors under Apache-2.0. The [conversion](https://huggingface.co/VishalMysore/layaForWebTrained) is by VishalMysore and independently declares Apache-2.0. It exports the model to ONNX and quantizes weights and embeddings; results can differ from the original. Laya uses the ModernBERT-large backbone by Answer.AI and LightOn. These projects do not endorse this MOD.
 
-See [runtime/MODEL.md](runtime/MODEL.md) for pinned files, modifications and reproducible build instructions. The runtime JAR preserves the upstream model license and includes the full Apache-2.0 text. Model weights are bundled in the distribution JAR; they are not covered by this project's MIT license.
+The bundled fallback's pinned revisions, file hashes and build instructions are in [runtime/MODEL.md](runtime/MODEL.md). Its converter LICENSE and NOTICE are preserved in `runtime/licenses/` and the distributed runtime JAR under `third-party/model/`; the full Apache-2.0 text is also included. The native path's pinned manifest, per-member hashes, and notices live under `common/src/main/resources/localinferenceapi/som/` (`manifest.json`, `LLAMA-CPP-LICENSE.txt`, `JEVK5-NOTICE.txt`, `MODEL-NOTICE.txt`, `LICENSE-LLVM-OpenMP.txt`, `Apache-2.0.txt`). Model weights remain under their upstream terms.
 
 ## Execution libraries
 
-The runtime uses GraalPy Community 25.0.1, ONNX Runtime 1.30.0, DJL Hugging Face tokenizers 0.38.0 and their dependencies. The Fabric distribution also embeds Fabric API modules. Each retains its own license. The runtime build preserves dependency LICENSE, NOTICE and COPYING files under `third-party/<dependency-jar>/`; nested Fabric API JARs retain their own notices.
+The fallback worker uses ONNX Runtime 1.30.0, DJL Hugging Face tokenizers 0.38.0, Gson 2.10.1 and their dependencies. The native path launches an unmodified upstream [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` (MIT) at pinned build `b10964`; its Windows binaries also carry the LLVM OpenMP runtime (Apache-2.0 with LLVM exceptions) — the corresponding license texts ship in the JAR. The Fabric distribution embeds Fabric API modules. Each retains its own license. The runtime build preserves dependency LICENSE, NOTICE and COPYING files under `third-party/<dependency-jar>/`; nested Fabric API JARs retain their own notices.
 
-PyFish is an architectural reference for Python embedding only, not a prerequisite or bundled component. Its source code has not been copied into this project.
+PyFish was an architectural reference during the 0.1.0 Python-embedding prototype. It is not bundled or required in 1.0.0, and no PyFish source has been copied into this project.

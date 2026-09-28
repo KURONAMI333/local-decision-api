@@ -22,7 +22,18 @@ public final class FakeWorker {
                         WorkerClient.writeFrame(output, "{\"error\":\"input too long\"}");
                         continue;
                     }
-                    int count = request.getAsJsonArray("choices").size() + 1;
+                    String kind = request.has("kind") ? request.get("kind").getAsString() : "choice";
+                    if (kind.equals("score")) {
+                        if (request.getAsJsonArray("levels").size() != 3) throw new AssertionError("Score levels not transmitted");
+                        WorkerClient.writeFrame(output, "{\"score\":1.5,\"selectedLevel\":2,\"probabilities\":[0.1,0.3,0.6]}");
+                        continue;
+                    }
+                    if (kind.equals("noul")) {
+                        if (!request.has("proposition")) throw new AssertionError("Noul proposition not transmitted");
+                        WorkerClient.writeFrame(output, "{\"trueProbability\":0.8}");
+                        continue;
+                    }
+                    int count = request.getAsJsonArray("choices").size();
                     var probabilities = new com.google.gson.JsonArray();
                     var logits = new com.google.gson.JsonArray();
                     for (int i = 0; i < count; i++) { probabilities.add(1.0 / count); logits.add(0); }

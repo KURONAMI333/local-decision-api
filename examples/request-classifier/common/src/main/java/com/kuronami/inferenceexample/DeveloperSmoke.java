@@ -1,7 +1,11 @@
 package com.kuronami.inferenceexample;
 
 import com.kuronami.localinferenceapi.api.LocalInference;
+import com.kuronami.localinferenceapi.api.NoulRequest;
+import com.kuronami.localinferenceapi.api.ScoreLevel;
+import com.kuronami.localinferenceapi.api.ScoreRequest;
 import com.mojang.logging.LogUtils;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -39,6 +43,22 @@ public final class DeveloperSmoke {
             // 選択内容は診断値。正解率を、この2例だけから保証しない。
             LogUtils.getLogger().info("INFERENCE_EXAMPLE_SMOKE_PASS twoRequests=true serverThread=true first={} second={}",
                     first.join().selected(), second.join().selected());
+            var score = LocalInference.score(new ScoreRequest(
+                    "The player is in a dark cave and asks for torches.",
+                    "How useful is a torch for this player?",
+                    List.of(new ScoreLevel("Not useful", 0), new ScoreLevel("Somewhat useful", 1),
+                            new ScoreLevel("Very useful", 2))));
+            var noul = LocalInference.noul(new NoulRequest(
+                    "The player is in a dark cave and asks for torches.",
+                    "The player needs a source of light."));
+            CompletableFuture.allOf(score, noul).whenComplete((primitives, primitiveFailure) -> server.execute(() -> {
+                if (primitiveFailure != null || server.overworld() != capturedLevel || !server.isSameThread()) {
+                    LogUtils.getLogger().error("INFERENCE_PRIMITIVES_SMOKE_FAIL", primitiveFailure);
+                    return;
+                }
+                LogUtils.getLogger().info("INFERENCE_PRIMITIVES_SMOKE_PASS score={} trueProbability={}",
+                        score.join().score(), noul.join().trueProbability());
+            }));
             });
         });
     }

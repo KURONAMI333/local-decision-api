@@ -20,6 +20,6 @@ side="BOTH"
 [[dependencies.inferenceexample]]
 modId="localinferenceapi"
 type="required"
-versionRange="[0.1.0]"
+versionRange="[1.0.0]"
 ordering="AFTER"
 side="BOTH"

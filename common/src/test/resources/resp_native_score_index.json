@@ -1,0 +1,1 @@
+{"model":"laya-multilingual","answers":{"q":{"type":"score","confidence":0.4738,"action":{"act_probability":1.0},"score":0.9069,"probabilities":{"0":0.1381,"1":0.8169,"2":0.045},"legend":{"0":"low","1":"medium","2":"high"}}},"usage":{"input_tokens":44,"output_tokens":0}}

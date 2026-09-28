@@ -1,21 +1,91 @@
+Local Decision API — License
+==============================
+
+Copyright (c) 2026 KURONAMI333
+
+This project is published under two sets of terms. LICENSING.md states
+exactly which files each part covers. In short:
+
+  - The public API sources (com.kuronami.localinferenceapi.api) and the
+    developer-kit example mod under examples/ are under the MIT License
+    (Part 1 below).
+  - Everything else written by KURONAMI333 — the internal implementation,
+    loader glue, runtime worker, tests, build scripts, documentation and
+    assets — is All Rights Reserved under Part 2 below.
+  - Models, runtimes and libraries bundled into, or downloaded by, the
+    mod keep their own upstream licenses. See THIRD_PARTY.md.
+
+These terms are not retroactive: the published 0.1.0 release was
+distributed under the MIT License and remains under it.
+
+
+----------------------------------------------------------------------
+Part 1 — Public API sources and developer-kit example: MIT License
+----------------------------------------------------------------------
+
 MIT License
 
 Copyright (c) 2026 KURONAMI333
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+----------------------------------------------------------------------
+Part 2 — Internal implementation: All Rights Reserved
+----------------------------------------------------------------------
+
+Copyright (c) 2026 KURONAMI333
+
+The source code of the internal implementation is published so that
+anyone can read it, see exactly what the mod does, and report problems.
+Publishing it does not place it in the public domain and does not grant
+a licence to reuse it.
+
+You MAY:
+
+  - Use this mod, privately or on any server you run.
+  - Include this mod in a modpack and distribute that modpack, on any
+    platform and through any launcher, including a monetised modpack.
+    No permission request and no credit are required.
+  - Redistribute the unmodified mod JAR, including alongside a mod that
+    depends on it or as the dependency a launcher resolves for such a
+    mod.
+  - Write, build and distribute your own mods that compile against the
+    public API (the com.kuronami.localinferenceapi.api sources under
+    Part 1) and call it at runtime. Declaring a normal dependency on
+    this mod, calling the API, and distributing such a mod are
+    expressly allowed and need no permission.
+  - Read the source, and report bugs or suggest changes.
+
+You MAY NOT, without written permission:
+
+  - Copy the internal implementation's source code, in whole or in part,
+    into another project, or republish that source code.
+  - Distribute a modified version of the internal implementation or of
+    the mod JAR.
+  - Republish this mod under a different name.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.

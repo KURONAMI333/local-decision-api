@@ -1,0 +1,33 @@
+Model attribution notice (packager-supplied)
+============================================
+
+This package may download machine-learning model weights distributed under
+the Apache License, Version 2.0:
+
+  Product:   JevK5-4B v0.3 (GGUF, Q5_K_M quantization)
+  File:      jevk5-4b-v0.3-Q5_K_M.gguf
+  Publisher: alibiserikbay (JevK5 project, github.com/allebee/jevk5)
+  Source:    https://huggingface.co/alibiserikbay/JevK5-GGUF
+  Revision:  ec67b0bfce5119a8b11a2cdb430bb43e3fa3e82a
+  SHA-256:   b1df9869dd14c0f5b243fa956dd985f0141c3d23ec4847da4c503c73c1050601
+  License:   Apache License 2.0 (declared via repository card license field;
+             upstream NOTICE file is included alongside as JEVK5-NOTICE.txt)
+
+The Apache License 2.0 text is included alongside this file as Apache-2.0.txt.
+The upstream NOTICE (JEVK5-NOTICE.txt) carries the full attribution chain:
+JevK5 is distilled from Qwen3.5-4B (Apache-2.0, Qwen team) with a thinking
+teacher (Qwen3.6-27B, Apache-2.0); the decision prompt and one-pass readout
+are adapted from SemIf by TheoLeeCJ (MIT). See JEVK5-NOTICE.txt for the
+training-data license list.
+
+Runtime attribution:
+
+  Product:   llama.cpp (llama-server), build b10964
+  Publisher: ggml-org
+  Source:    https://github.com/ggml-org/llama.cpp
+  License:   MIT (LLAMA-CPP-LICENSE.txt); Windows builds bundle LLVM OpenMP
+             (Apache-2.0 with LLVM Exceptions, LICENSE-LLVM-OpenMP.txt)
+
+NOTE: This notice is a packager-supplied attribution stub for the 1.0.0
+integration gate. It is NOT a legal opinion and has NOT been reviewed by
+counsel.

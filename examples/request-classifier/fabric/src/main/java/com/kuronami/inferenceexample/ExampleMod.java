@@ -3,10 +3,12 @@ package com.kuronami.inferenceexample;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
 public final class ExampleMod implements ModInitializer {
     @Override public void onInitialize() {
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> RequestClassifier.register(dispatcher));
+        ServerTickEvents.END_SERVER_TICK.register(MpProbe::tick);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             WorldSession.started(server);
             DeveloperSmoke.started(server);

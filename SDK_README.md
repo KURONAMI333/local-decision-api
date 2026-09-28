@@ -1,8 +1,8 @@
-# Local Inference API developer kit
+# Local Decision API developer kit
 
 Minecraft 1.21.1 • Fabric / NeoForge • Java 21
 
-This kit contains a small compile-only Maven repository under `maven/` and an independent example under `example/`. It does not contain the model or the full runtime MOD. Install the matching full Local Inference API MOD JAR in your test game's mods directory.
+This kit contains a small compile-only Maven repository under `maven/` and an independent example under `example/`. It does not contain the model or the full runtime MOD. Install the matching full Local Decision API MOD JAR in your test game's mods directory.
 
 ## Build the example
 
@@ -23,16 +23,16 @@ repositories {
     maven { url = uri('/absolute/path/to/this-kit/maven') }
 }
 dependencies {
-    compileOnly 'com.kuronami.localinferenceapi:local-inference-api:0.1.0'
+    compileOnly 'com.kuronami.localinferenceapi:local-inference-api:1.0.0'
 }
 ```
 
-Use `com.kuronami.localinferenceapi.api.LocalInference.decide(DecisionRequest)`. Declare MOD ID `localinferenceapi` as a required runtime dependency; the loader-specific metadata and callback example are in `example/README.md` and the source tree. Never bundle the compile-only API classes into your own MOD or install this API JAR instead of the full MOD.
+Use `com.kuronami.localinferenceapi.api.LocalInference` for `decide`, `score` and `noul`. Declare MOD ID `localinferenceapi` as a required runtime dependency; the loader-specific metadata and callback example are in `example/README.md` and the source tree. Never bundle the compile-only API classes into your own MOD or install this API JAR instead of the full MOD.
 
-The public API takes immutable text snapshots and returns a CompletableFuture. Schedule changes back onto the game thread and confirm that the target player/world still exists. Handle failure and abstention. The bundled model makes mistakes and is not an authorization or safety system.
+The public API takes immutable text snapshots and returns a CompletableFuture. Schedule changes back onto the game thread and confirm that the target player/world still exists. Handle failure. The model always returns a choice for a valid request; it has no independent abstention result. The model makes mistakes and is not an authorization or safety system.
 
-The library manages a shared runtime. Calls must not initialize or shut it down. Pin a tested 0.x release; API compatibility does not guarantee unchanged model decisions. The model remains resident after use until disconnection, server stop or application exit; no automatic idle unloading is provided in this release.
+The library manages a shared runtime. Calls must not initialize or shut it down. Pin a tested release; API compatibility does not guarantee unchanged model decisions. The worker unloads five minutes after the last request and restarts on demand; disconnection or server stop closes it sooner.
 
 ## License
 
-Our API and example code are MIT licensed. See LICENSE and THIRD_PARTY.md. Models and runtime dependencies in the full MOD retain their own licenses. Nothing in this developer kit publishes a remote Maven repository or changes third-party terms.
+The public API sources and the example code in this kit are MIT licensed (LICENSE Part 1). The full MOD's internal implementation is All Rights Reserved; declaring a normal dependency on it, calling the API, and redistributing the unmodified MOD JAR are expressly allowed (LICENSE Part 2). LICENSING.md states the file-level scope. Models and runtime dependencies in the full MOD retain their own licenses; see THIRD_PARTY.md. Nothing in this developer kit publishes a remote Maven repository or changes third-party terms.

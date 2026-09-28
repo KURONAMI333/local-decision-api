@@ -19,6 +19,7 @@ neoForge {
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testImplementation 'com.google.code.gson:gson:2.10.1'
+    testImplementation 'org.slf4j:slf4j-api:2.0.17'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
 }
 
@@ -46,12 +47,14 @@ tasks.register('apiJar', Jar) {
     dependsOn tasks.named('classes')
     archiveBaseName = 'local-inference-api'
     from(rootProject.file('LICENSE'))
+    from(rootProject.file('LICENSING.md'))
     from(sourceSets.main.output) { include 'com/kuronami/localinferenceapi/api/**' }
 }
 
 tasks.register('apiSourcesJar', Jar) {
     archiveBaseName = 'local-inference-api'
     from(rootProject.file('LICENSE'))
+    from(rootProject.file('LICENSING.md'))
     archiveClassifier = 'sources'
     from(sourceSets.main.allSource) { include 'com/kuronami/localinferenceapi/api/**' }
 }
@@ -65,9 +68,9 @@ publishing {
             artifact tasks.named('apiJar')
             artifact tasks.named('apiSourcesJar')
             pom {
-                name = 'Local Inference API'
+                name = 'Local Decision API'
                 licenses { license { name = 'MIT License'; url = 'https://opensource.org/license/mit' } }
-                description = 'Compile-only Java API for the Local Inference API Minecraft mod.'
+                description = 'Compile-only Java API for the Local Decision API Minecraft mod.'
             }
         }
     }

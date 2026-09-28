@@ -44,9 +44,86 @@ class WorkerClientTest {
         try (var client = new WorkerClient(() -> { launches.incrementAndGet(); return launch("ok"); }, Duration.ofSeconds(5), Duration.ofSeconds(5))) {
             assertEquals(0, launches.get());
             assertEquals(0, client.decide(REQUEST).get(10, TimeUnit.SECONDS).selected());
-            assertEquals(3, client.decide(REQUEST).get(10, TimeUnit.SECONDS).probabilities().size());
+            assertEquals(2, client.decide(REQUEST).get(10, TimeUnit.SECONDS).probabilities().size());
             assertEquals(1, launches.get());
         }
+    }
+
+    @Test void unloadsAfterIdleAndStartsAgainOnNextRequest() throws Exception {
+        AtomicInteger launches = new AtomicInteger();
+        AtomicReference<Process> first = new AtomicReference<>();
+        try (var client = new WorkerClient(() -> {
+            Process process = launch("ok");
+            if (launches.incrementAndGet() == 1) first.set(process);
+            return process;
+        }, Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofMillis(100))) {
+            assertEquals(0, client.decide(REQUEST).get(10, TimeUnit.SECONDS).selected());
+            assertTrue(first.get().waitFor(5, TimeUnit.SECONDS), "idle worker must exit");
+            assertFalse(client.isClosed(), "idle unload is not a model failure");
+            assertEquals(0, client.decide(REQUEST).get(10, TimeUnit.SECONDS).selected());
+            assertEquals(2, launches.get());
+        }
+    }
+
+    @Test void requestDuringIdleShutdownReturnsPromptlyAndWaitsForOldProcessExit() throws Exception {
+        CountDownLatch stopping = new CountDownLatch(1);
+        CountDownLatch releaseStop = new CountDownLatch(1);
+        AtomicInteger launches = new AtomicInteger();
+        AtomicReference<Process> first = new AtomicReference<>();
+        try (var client = new WorkerClient(() -> {
+            Process raw = launch("ok");
+            if (launches.incrementAndGet() != 1) return raw;
+            first.set(raw);
+            return new Process() {
+                @Override public OutputStream getOutputStream() { return raw.getOutputStream(); }
+                @Override public InputStream getInputStream() { return raw.getInputStream(); }
+                @Override public InputStream getErrorStream() { return raw.getErrorStream(); }
+                @Override public int waitFor() throws InterruptedException { return raw.waitFor(); }
+                @Override public boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException { return raw.waitFor(timeout, unit); }
+                @Override public int exitValue() { return raw.exitValue(); }
+                @Override public boolean isAlive() { return raw.isAlive(); }
+                @Override public void destroy() {
+                    stopping.countDown();
+                    try { releaseStop.await(5, TimeUnit.SECONDS); }
+                    catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                    raw.destroy();
+                }
+                @Override public Process destroyForcibly() { raw.destroyForcibly(); return this; }
+            };
+        }, Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofMillis(100))) {
+            assertEquals(0, client.decide(REQUEST).get(10, TimeUnit.SECONDS).selected());
+            assertTrue(stopping.await(5, TimeUnit.SECONDS), "idle shutdown must start");
+            long start = System.nanoTime();
+            var next = client.decide(REQUEST);
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 500,
+                    "submitting a request must not wait for process shutdown");
+            assertEquals(1, launches.get(), "new worker must not start before old worker exits");
+            releaseStop.countDown();
+            assertEquals(0, next.get(10, TimeUnit.SECONDS).selected());
+            assertFalse(first.get().isAlive());
+            assertEquals(2, launches.get());
+        } finally { releaseStop.countDown(); }
+    }
+
+    @Test void supportsAllThreePrimitivesOnOneWorker() throws Exception {
+        var levels = List.of(new ScoreLevel("not relevant", 0), new ScoreLevel("somewhat relevant", 1), new ScoreLevel("strongly relevant", 2));
+        try (var client = client("ok")) {
+            assertEquals(0, client.decide(REQUEST).get(10, TimeUnit.SECONDS).selected());
+            var score = client.score(new ScoreRequest("query and item", "How relevant is this item?", levels)).get(10, TimeUnit.SECONDS);
+            assertEquals(1.5, score.score());
+            assertEquals(2, score.selectedLevel());
+            assertEquals(3, score.probabilities().size());
+            var noul = client.noul(new NoulRequest("query and item", "This item is relevant")).get(10, TimeUnit.SECONDS);
+            assertEquals(0.8, noul.trueProbability());
+        }
+    }
+
+    @Test void validatesScoreAndNoulInputsAndResponseShape() throws Exception {
+        assertThrows(IllegalArgumentException.class, () -> new ScoreRequest("c", "q", List.of(new ScoreLevel("only", 0))));
+        assertThrows(IllegalArgumentException.class, () -> new ScoreRequest("c", "q", List.of(new ScoreLevel("low", 1), new ScoreLevel("high", 1))));
+        assertThrows(IllegalArgumentException.class, () -> new NoulRequest("c", "bad <<LABEL>> input"));
+        assertThrows(IOException.class, () -> WorkerClient.parseScoreResult(JsonParser.parseString("{\"score\":null,\"selectedLevel\":null,\"probabilities\":[0.1,0.9]}").getAsJsonObject(), 2));
+        assertThrows(IOException.class, () -> WorkerClient.parseNoulResult(JsonParser.parseString("{\"trueProbability\":null}").getAsJsonObject()));
     }
 
     @Test void modelInputRejectionDoesNotRestartWorker() throws Exception {
@@ -218,13 +295,17 @@ class WorkerClientTest {
         }
     }
 
-    @Test void responseMustIncludeAbstentionSlotAndValidIndex() throws Exception {
+    @Test void responseMustMatchOptionsAndValidIndex() throws Exception {
         assertThrows(IOException.class, () -> WorkerClient.parseResult(JsonParser.parseString(
-                "{\"selected\":0,\"probabilities\":[0.5,0.5],\"logits\":[0,0]}").getAsJsonObject(), 2));
+                "{\"selected\":0,\"probabilities\":[1.0],\"logits\":[0]}").getAsJsonObject(), 2));
         assertThrows(IOException.class, () -> WorkerClient.parseResult(JsonParser.parseString(
-                "{\"selected\":2,\"probabilities\":[0.2,0.3,0.5],\"logits\":[0,1,2]}").getAsJsonObject(), 2));
-        assertNull(WorkerClient.parseResult(JsonParser.parseString(
-                "{\"selected\":null,\"probabilities\":[0.2,0.3,0.5],\"logits\":[0,1,2]}").getAsJsonObject(), 2).selected());
+                "{\"selected\":2,\"probabilities\":[0.2,0.8],\"logits\":[0,1]}").getAsJsonObject(), 2));
+        assertThrows(IOException.class, () -> WorkerClient.parseResult(JsonParser.parseString(
+                "{\"selected\":null,\"probabilities\":[0.2,0.8],\"logits\":[0,1]}").getAsJsonObject(), 2));
+        assertTrue(WorkerClient.parseResult(JsonParser.parseString(
+                "{\"selected\":0,\"probabilities\":[0.2,0.8],\"logits\":[0,1],\"truncated\":true}").getAsJsonObject(), 2).truncated());
+        assertFalse(WorkerClient.parseResult(JsonParser.parseString(
+                "{\"selected\":0,\"probabilities\":[0.2,0.8],\"logits\":[0,1]}").getAsJsonObject(), 2).truncated());
     }
 
     @Test void cacheRepairsCorruptionAndLeavesNoPartialFile() throws Exception {

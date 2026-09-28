@@ -1,8 +1,8 @@
 package com.kuronami.localinferenceapi.internal;
 
 import com.google.gson.*;
-import com.kuronami.localinferenceapi.api.DecisionRequest;
-import com.kuronami.localinferenceapi.api.DecisionResult;
+import com.kuronami.localinferenceapi.api.*;
+import com.kuronami.localinferenceapi.internal.som.TypedBackend;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -13,17 +13,21 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** 1 プロセス・1 推論の境界。異常終了後に自動再起動して失敗を繰り返さない。 */
-public final class WorkerClient implements AutoCloseable {
+/** 1 プロセス・1 推論の境界。異常終了後に自動再起動して失敗を繰り返さない。
+ *  opt-in SOM 経路では同じインスタンスが ChannelTypedAdapter の CPU backend になる。 */
+public final class WorkerClient implements AutoCloseable, TypedBackend {
     private static final int MAX_FRAME = 1_048_576;
     private static final Gson JSON = new Gson();
     private final Object lock = new Object();
-    private final Set<CompletableFuture<DecisionResult>> pending = new HashSet<>();
+    private final Set<CompletableFuture<?>> pending = new HashSet<>();
     private final ThreadPoolExecutor executor;
     private final ScheduledExecutorService watchdog;
     private final Launcher launcher;
     private final Duration startupTimeout;
     private final Duration inferenceTimeout;
+    private final Duration idleTimeout;
+    private ScheduledFuture<?> idleDeadline;
+    private boolean idleStopping;
     private Process process;
     private DataInputStream input;
     private DataOutputStream output;
@@ -32,13 +36,19 @@ public final class WorkerClient implements AutoCloseable {
     @FunctionalInterface interface Launcher { Process launch() throws IOException; }
 
     public WorkerClient(Path gameDirectory) {
-        this(() -> launchBundled(gameDirectory), Duration.ofSeconds(180), Duration.ofSeconds(60));
+        this(() -> launchBundled(gameDirectory), Duration.ofSeconds(180), Duration.ofSeconds(60), Duration.ofMinutes(5));
     }
 
     WorkerClient(Launcher launcher, Duration startupTimeout, Duration inferenceTimeout) {
+        this(launcher, startupTimeout, inferenceTimeout, Duration.ofMinutes(5));
+    }
+
+    WorkerClient(Launcher launcher, Duration startupTimeout, Duration inferenceTimeout, Duration idleTimeout) {
         this.launcher = Objects.requireNonNull(launcher);
         this.startupTimeout = startupTimeout;
         this.inferenceTimeout = inferenceTimeout;
+        if (idleTimeout.isNegative() || idleTimeout.isZero()) throw new IllegalArgumentException("Idle timeout must be positive");
+        this.idleTimeout = idleTimeout;
         executor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(16),
                 task -> daemon(task, "localinferenceapi-inference"), new ThreadPoolExecutor.AbortPolicy());
         watchdog = Executors.newSingleThreadScheduledExecutor(task -> daemon(task, "localinferenceapi-watchdog"));
@@ -52,35 +62,55 @@ public final class WorkerClient implements AutoCloseable {
 
     public CompletableFuture<DecisionResult> decide(DecisionRequest request) {
         Objects.requireNonNull(request, "request");
-        CompletableFuture<DecisionResult> future = new CompletableFuture<>();
+        return submit(request, response -> parseResult(response, request.choices().size()));
+    }
+
+    public CompletableFuture<ScoreResult> score(ScoreRequest request) {
+        Objects.requireNonNull(request, "request");
+        return submit(new TypedRequest<>("score", request), response -> parseScoreResult(response, request.levels().size()));
+    }
+
+    public CompletableFuture<NoulResult> noul(NoulRequest request) {
+        Objects.requireNonNull(request, "request");
+        return submit(new TypedRequest<>("noul", request), WorkerClient::parseNoulResult);
+    }
+
+    private record TypedRequest<T>(String kind, T body) {}
+    @FunctionalInterface private interface Parser<T> { T parse(JsonObject response) throws IOException; }
+
+    private <T> CompletableFuture<T> submit(Object request, Parser<T> parser) {
+        CompletableFuture<T> future = new CompletableFuture<>();
         synchronized (lock) {
             if (terminalFailure != null) return CompletableFuture.failedFuture(terminalFailure);
+            if (idleDeadline != null) idleDeadline.cancel(false);
             pending.add(future);
             try {
-                executor.execute(() -> execute(request, future));
+                executor.execute(() -> execute(request, future, parser));
             } catch (RejectedExecutionException full) {
                 pending.remove(future);
-                future.completeExceptionally(new RejectedExecutionException("Local Inference API request queue is full"));
+                future.completeExceptionally(new RejectedExecutionException("Local Decision API request queue is full"));
             }
         }
         return future;
     }
 
-    private void execute(DecisionRequest request, CompletableFuture<DecisionResult> future) {
+    private <T> void execute(Object request, CompletableFuture<T> future, Parser<T> parser) {
         try {
             if (future.isDone()) return;
             ensureStarted();
             if (future.isDone()) return;
-            ScheduledFuture<?> deadline = deadline(inferenceTimeout, "Local Inference API inference timed out");
+            ScheduledFuture<?> deadline = deadline(inferenceTimeout, "Local Decision API inference timed out");
             try {
-                writeFrame(output, JSON.toJson(request));
+                String json = request instanceof TypedRequest<?> typed
+                        ? typedJson(typed) : JSON.toJson(request);
+                writeFrame(output, json);
                 JsonObject response = readFrame(input);
                 if (response.has("error")) {
                     // モデルの入力拒否はプロセス故障ではない。詳細ログは subprocess 側へ置く。
                     deadline.cancel(false);
-                    completeResponse(future, null, new IllegalArgumentException("Local Inference API rejected this request"));
+                    completeResponse(future, null, new IllegalArgumentException("Local Decision API rejected this request"));
                 } else {
-                    DecisionResult result = parseResult(response, request.choices().size());
+                    T result = parser.parse(response);
                     deadline.cancel(false);
                     completeResponse(future, result, null);
                 }
@@ -88,13 +118,46 @@ public final class WorkerClient implements AutoCloseable {
                 deadline.cancel(false);
             }
         } catch (Exception failure) {
-            fail(new IllegalStateException("Local Inference API worker failed; see the local worker log", failure));
+            fail(new IllegalStateException("Local Decision API worker failed; see the local worker log", failure));
         } finally {
-            synchronized (lock) { pending.remove(future); }
+            synchronized (lock) {
+                pending.remove(future);
+                if (terminalFailure == null && pending.isEmpty() && process != null) {
+                    idleDeadline = watchdog.schedule(this::unloadWhenIdle, idleTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                }
+            }
         }
     }
 
-    private void completeResponse(CompletableFuture<DecisionResult> future, DecisionResult result, Throwable failure) {
+    private void unloadWhenIdle() {
+        Process stopped;
+        synchronized (lock) {
+            if (terminalFailure != null || !pending.isEmpty() || process == null) return;
+            idleDeadline = null;
+            idleStopping = true;
+            stopped = process;
+        }
+        // ゲーム側のsubmitは待たせず、推論executorだけが停止完了を待つ。
+        boolean exited = terminate(stopped);
+        if (!exited) fail(new IllegalStateException("Idle worker did not stop"));
+        synchronized (lock) {
+            if (exited && process == stopped) {
+                process = null;
+                input = null;
+                output = null;
+            }
+            idleStopping = false;
+            lock.notifyAll();
+        }
+    }
+
+    private static String typedJson(TypedRequest<?> typed) {
+        JsonObject object = JSON.toJsonTree(typed.body()).getAsJsonObject();
+        object.addProperty("kind", typed.kind());
+        return object.toString();
+    }
+
+    private <T> void completeResponse(CompletableFuture<T> future, T result, Throwable failure) {
         synchronized (lock) {
             // close / timeout と応答の受理を一箇所で決着させる。
             // pending を先に回収した側だけが通知を担当し、除去後も必ず完了を発行する。
@@ -110,10 +173,17 @@ public final class WorkerClient implements AutoCloseable {
 
     private void ensureStarted() throws IOException {
         synchronized (lock) {
+            while (idleStopping && terminalFailure == null) {
+                try { lock.wait(); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for idle worker shutdown", interrupted);
+                }
+            }
             if (terminalFailure != null) throw new IOException("Worker is closed");
             if (process != null) return;
         }
-        ScheduledFuture<?> deadline = deadline(startupTimeout, "Local Inference API startup timed out");
+        ScheduledFuture<?> deadline = deadline(startupTimeout, "Local Decision API startup timed out");
         try {
             Process created = launcher.launch();
             synchronized (lock) {
@@ -143,19 +213,52 @@ public final class WorkerClient implements AutoCloseable {
         try {
             JsonElement selection = object.get("selected");
             if (selection == null) throw new IOException("Missing selected result");
-            Integer selected = null;
-            if (!selection.isJsonNull()) {
-                if (!selection.isJsonPrimitive() || !selection.getAsJsonPrimitive().isNumber()) {
-                    throw new IOException("Invalid selected type");
-                }
-                selected = selection.getAsBigDecimal().intValueExact();
+            if (!selection.isJsonPrimitive() || !selection.getAsJsonPrimitive().isNumber()) {
+                throw new IOException("Invalid selected type");
             }
-            List<Double> probabilities = numbers(object.getAsJsonArray("probabilities"), expectedChoices + 1);
-            List<Double> logits = numbers(object.getAsJsonArray("logits"), expectedChoices + 1);
-            return new DecisionResult(selected, probabilities, logits);
+            int selected = selection.getAsBigDecimal().intValueExact();
+            List<Double> probabilities = numbers(object.getAsJsonArray("probabilities"), expectedChoices);
+            List<Double> logits = numbers(object.getAsJsonArray("logits"), expectedChoices);
+            return new DecisionResult(selected, probabilities, logits, truncated(object));
         } catch (RuntimeException malformed) {
             throw new IOException("Invalid worker response", malformed);
         }
+    }
+
+    static ScoreResult parseScoreResult(JsonObject object, int expectedLevels) throws IOException {
+        try {
+            int selected = requiredIndex(object.get("selectedLevel"), expectedLevels);
+            JsonElement value = object.get("score");
+            if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) throw new IOException("Missing score");
+            return new ScoreResult(value.getAsDouble(), selected, numbers(object.getAsJsonArray("probabilities"), expectedLevels), truncated(object));
+        } catch (RuntimeException malformed) {
+            throw new IOException("Invalid score result", malformed);
+        }
+    }
+
+    static NoulResult parseNoulResult(JsonObject object) throws IOException {
+        try {
+            JsonElement probability = object.get("trueProbability");
+            if (probability == null || !probability.isJsonPrimitive() || !probability.getAsJsonPrimitive().isNumber()) {
+                throw new IOException("Missing Noul fields");
+            }
+            return new NoulResult(probability.getAsDouble(), truncated(object));
+        } catch (RuntimeException malformed) {
+            throw new IOException("Invalid Noul result", malformed);
+        }
+    }
+
+    private static boolean truncated(JsonObject object) {
+        JsonElement flag = object.get("truncated");
+        return flag != null && flag.isJsonPrimitive() && flag.getAsJsonPrimitive().isBoolean() && flag.getAsBoolean();
+    }
+
+    private static int requiredIndex(JsonElement value, int maximum) throws IOException {
+        if (value == null) throw new IOException("Missing selected index");
+        if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) throw new IOException("Invalid index type");
+        int index = value.getAsBigDecimal().intValueExact();
+        if (index < 0 || index >= maximum) throw new IOException("Index outside request");
+        return index;
     }
 
     private static List<Double> numbers(JsonArray array, int expected) throws IOException {
@@ -208,7 +311,7 @@ public final class WorkerClient implements AutoCloseable {
 
     private void fail(Throwable failure) {
         Process stopped;
-        List<CompletableFuture<DecisionResult>> unfinished;
+        List<CompletableFuture<?>> unfinished;
         synchronized (lock) {
             if (terminalFailure != null) return;
             terminalFailure = failure;
@@ -225,17 +328,20 @@ public final class WorkerClient implements AutoCloseable {
         unfinished.forEach(future -> Thread.startVirtualThread(() -> future.completeExceptionally(failure)));
     }
 
-    private static void terminate(Process process) {
+    private static boolean terminate(Process process) {
         process.destroy();
         try {
-            if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly();
+            if (process.waitFor(2, TimeUnit.SECONDS)) return true;
+            process.destroyForcibly();
+            return process.waitFor(2, TimeUnit.SECONDS);
         } catch (InterruptedException interrupted) {
             process.destroyForcibly();
             Thread.currentThread().interrupt();
+            return !process.isAlive();
         }
     }
 
     public boolean isClosed() { synchronized (lock) { return terminalFailure != null; } }
 
-    @Override public void close() { fail(new CancellationException("Local Inference API stopped")); }
+    @Override public void close() { fail(new CancellationException("Local Decision API stopped")); }
 }
