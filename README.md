@@ -1,27 +1,14 @@
 # Local Decision API
 
-**Helps compatible mods choose between predefined options or rate a situation on the game PC or server. Adds no gameplay by itself.**
+Local Decision API helps Minecraft mods choose between options, rate a situation, or estimate the likelihood of a statement. A calling mod supplies the game context and defines the possible answers; it decides how to use the result.
 
-A library mod that lets other mods submit a context, a question, and a list of choices to a local model. Results arrive asynchronously. This library does not add gameplay by itself.
+## Model and operation
 
-## Status
+[System One Models (SOMs)](https://typesafe.ai/blog/introducing-system-one-models-and-jev) focus on structured decisions: a defined question produces a choice, score, or probability. This API uses that style of question. The primary model in 1.0.0 is [JevK5-4B v0.3](https://github.com/allebee/jevk5), an open-weight model built on Qwen3.5. Its [model card](https://huggingface.co/alibiserikbay/JevK5) describes the weights and training. The mod also bundles a fallback model; details and upstream credits are in [THIRD_PARTY.md](THIRD_PARTY.md).
 
-Local Decision API 1.0.0 targets Minecraft **1.21.1**, **Fabric and NeoForge**, **Java 21+**. The primary inference path runs **JevK5-4B v0.3 (Q5_K_M)** through a pinned **llama.cpp `llama-server`** process outside the Minecraft JVM; the MOD automatically stages the hash-pinned runtime and model into the game directory on first use. If the native worker is unavailable or still starting, the bundled **Laya Typed-Decisions** ONNX worker inside the same JAR serves requests as a degraded fallback. The earlier 0.1.0 release remains a Choice-only Verdict prototype. Model probabilities are not well-calibrated truth, and gameplay or language quality is not guaranteed.
+The mod downloads about **3.1 GB** of model and runtime files on first use and keeps them in the game directory. The Fabric and NeoForge JARs are each about **450 MB** because they include the fallback. A rented server needs enough storage, permission for the download, and permission to start a worker process. Model results are estimates; consumer mods should decide how to handle unsuitable or uncertain answers.
 
-The full native path — manifest verification, staged download with SHA-256 pins, archive extraction, `llama-server` launch on loopback with a per-launch API key, Choice/Score/Noul readout, restart, offline cache and idle unload — has been exercised end to end on **macOS Apple Silicon**, and on a **Windows x64 dedicated server** answering two connected clients. The bundled ONNX fallback has passed standalone Java worker tests and dedicated-server inference on macOS and Windows x64 for both loaders (see runtime/MODEL.md for those measurements). **Still unverified:** the native path inside the integrated (singleplayer) client on any OS, macOS x64, CPU-only Windows machines, and Linux — which has no native runtime at all, so the bundled fallback always serves there. The two loader JARs remain roughly 450 MB because the ONNX fallback is bundled; the native model is not inside the JAR.
-
-## For players
-
-**Before you install — please read:**
-
-- The JAR itself is large (about 450 MB) because it bundles a fallback model.
-- On first use the MOD downloads about **3.1 GB** of hash-pinned files (the JevK5 model and the llama.cpp runtime) into the game directory. A one-time internet connection is required for that fetch; play works offline afterwards. To use only the bundled fallback and skip the download entirely, launch with `-Dlocalinferenceapi.som.native=false`.
-- Platform coverage is uneven. The native path has been run end to end on Apple Silicon Macs and on a Windows x64 dedicated server. On **Linux** there is no native runtime at all and the bundled CPU fallback always serves requests. The native path is unverified in the **integrated (singleplayer) client**, on macOS x64, and on Windows machines without a compatible GPU; where it cannot start, the bundled fallback answers instead.
-- On a dedicated or rented server, everything runs on the machine hosting Minecraft — the download, the model files, and the worker process. The host must allow roughly 3.1 GB of outbound downloads and a spawned worker process; a shared host that blocks either leaves the library unable to answer.
-
-Install the JAR matching your Minecraft loader in `mods/`. Minecraft and the loader must already be installed. Fabric API is included in the Fabric JAR.
-
-No Python installation, manual model setup, account, API key, or separately managed inference server is needed. If the download or launch fails, the bundled CPU worker answers instead. Disconnecting or stopping the server closes the inference process. Gameplay features are provided by mods that depend on this library.
+Install this mod when another mod requires it. Mod authors can use the [1.0.0 developer kit](https://github.com/KURONAMI333/local-decision-api/releases/tag/v1.0.0), which includes a compile-only API artifact and a runnable example. The sections below cover integration, result handling, limits, and migration from 0.1.0.
 
 ## For mod developers
 
@@ -40,7 +27,7 @@ dependencies {
 
 Pass `-PlocalInferenceRepository=/absolute/path/to/local-inference-api/build/developer-repository`. The API artifact is not published to a public Maven repository — it ships inside the developer kit. The API JAR is only for compilation and must not be installed or bundled as a replacement for the full MOD.
 
-The 1.0.0 developer kit can be built with `./gradlew developerKit`. The [published 0.1.0 kit](https://github.com/KURONAMI333/local-inference-api/releases/tag/v0.1.0) is for the old API and model.
+The 1.0.0 developer kit can be built with `./gradlew developerKit`. The [published 0.1.0 kit](https://github.com/KURONAMI333/local-decision-api/releases/tag/v0.1.0) is for the old API and model.
 
 **Migration from 0.1.0:** Choice still uses `DecisionRequest` and `DecisionResult`, but `selected()` never returns `null` for a valid request and `probabilities()` / `logits()` have exactly one entry per supplied choice. The old final abstention entry is gone. Consumers that index that entry or rely on abstention must update before using 1.0.0. Keep 0.1.0 pinned until your addon has been adapted and tested.
 

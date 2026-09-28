@@ -1,22 +1,20 @@
-**Local Decision API is a library for other Minecraft mods.** A compatible mod describes a situation and provides a set of options or a rating scale; this mod returns one choice or rating from a small model.
+**Local Decision API lets Minecraft mods make bounded decisions from game state.** For example, a companion mod could submit “follow the player,” “return home,” and “fight” alongside the current situation, then decide how to act on the selected option. Authors can also ask for a rating on a scale or the likelihood of a statement.
 
-For example, a mod can pass three candidate actions and get one of them back; what the candidates mean and what happens with the answer stays with the calling mod. Each request is bounded: the model weighs only the candidates or scale it is given. Answers can be wrong, so the calling mod is expected to judge results and keep its own fallback.
+This is a library for mod authors. If a mod you use lists Local Decision API as a dependency, install it alongside that mod. Authors can start with the [developer kit and working example](https://github.com/KURONAMI333/local-decision-api/releases/tag/v1.0.0) or read the [integration guide](https://github.com/KURONAMI333/local-decision-api#for-mod-developers).
 
-### Where it runs
+### The model
 
-Inference runs on the computer or server hosting the game, without a cloud account or external AI service. On first use the mod downloads about 3.1 GB of hash-pinned model and runtime files into the game directory; once cached it also works offline. To skip that download and use only the bundled fallback model, launch with `-Dlocalinferenceapi.som.native=false`. The JAR itself is about 450 MB because it contains that fallback. The inference worker runs outside Minecraft's Java heap, but still uses the machine's RAM and, when available, GPU memory.
+[System One Models (SOMs)](https://typesafe.ai/blog/introducing-system-one-models-and-jev) are built around structured decisions: a defined question produces a choice, score, or probability. This API uses that style of question. This release uses [JevK5-4B v0.3](https://github.com/allebee/jevk5) as its primary model. Its [model card](https://huggingface.co/alibiserikbay/JevK5) describes the weights and training; this mod supplies the Minecraft integration, request handling, and a bundled fallback model.
 
-The primary model path has been exercised end to end on Apple Silicon Macs and on a Windows x64 dedicated server. It is not yet verified inside the singleplayer client, and on Linux there is no such runtime at all; wherever the primary path cannot start, the bundled fallback answers instead with reduced quality. On a server, the host must allow the roughly 3.1 GB download and a spawned worker process; a shared or free host that blocks either leaves the library unable to answer.
+The mod downloads about **3.1 GB** of model and runtime files on first use and keeps them in the game directory for later offline use. The mod JAR is about **450 MB** because it includes the fallback model. Inference uses the host computer's RAM and, when available, GPU memory. A rented server must permit the download and a worker process. Results are model estimates, so a calling mod should handle uncertain or unsuitable answers in its own logic.
 
-### Installing and developing
+### For mod authors
 
-Install this mod when another mod lists it as a dependency. Mod developers integrate through the public API, a compile-only dependency exposing `decide` (pick one of the given choices), `score` (rate on an ordered scale), and `noul` (estimate the probability that a statement holds). The developer kit in the source repository includes a runnable example mod.
+The Java API offers `decide` for choosing from supplied options, `score` for rating an ordered scale, and `noul` for estimating a statement's likelihood. Calls complete asynchronously. The [README](https://github.com/KURONAMI333/local-decision-api#for-mod-developers) covers dependency setup, result handling, limits, and migration from 0.1.0; the release includes a compile-only API artifact and runnable example.
 
-### Limits and licenses
+The public API and developer example are MIT licensed. The implementation is All Rights Reserved with permission for normal mod dependencies and modpack use. JevK5 and other third-party components retain their own terms; see [LICENSE](https://github.com/KURONAMI333/local-decision-api/blob/main/LICENSE), [LICENSING.md](https://github.com/KURONAMI333/local-decision-api/blob/main/LICENSING.md), and [THIRD_PARTY.md](https://github.com/KURONAMI333/local-decision-api/blob/main/THIRD_PARTY.md).
 
-Choices and ratings are model outputs, not verified facts or permission checks. The public API and developer example are MIT licensed; the internal implementation is All Rights Reserved with permission for normal mod dependencies and modpack use. Bundled models and other dependencies keep their own licenses. See the distributed LICENSE, LICENSING.md, and THIRD_PARTY.md for the exact terms.
-
-Source: https://github.com/KURONAMI333/local-inference-api
+Source: https://github.com/KURONAMI333/local-decision-api
 Bugs and questions: comment on the CurseForge page, or reach me on [X](https://x.com/kuronami333).
 
 <p><a href="https://www.patreon.com/KURONAMI333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/patreon.png" width="440" height="156" alt="Support my mods on Patreon"></a> <a href="https://x.com/kuronami333"><img src="https://raw.githubusercontent.com/KURONAMI333/music-disc-maker/6a0a895769575a1a58fd1fb6dfb15e259bcefccb/_docs/support/x.png" width="300" height="156" alt="Follow @kuronami333 on X"></a></p>
