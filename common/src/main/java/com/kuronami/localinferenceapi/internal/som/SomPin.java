@@ -37,7 +37,7 @@ public final class SomPin {
      * で再計算できる(som-pin/manifest.sha256 の dev sidecar と同じ値)。
      */
     public static final String MANIFEST_SHA256 =
-            "3744d73d6a1d35a802f737d09e7e856723c5f9cb6555c88b4ebe82f03f78c59c";
+            "44de3a679c4a079a796a3e3d95e579805adbe5d54b661be75b57079f2cc8351f";
 
     /**
      * artifact fetch が触れてよい host。各 entry は完全一致か subdomain に

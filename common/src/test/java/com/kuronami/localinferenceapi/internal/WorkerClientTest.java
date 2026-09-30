@@ -49,6 +49,27 @@ class WorkerClientTest {
         }
     }
 
+    @Test void retriesOnlyOneWorkerExitBeforeReady() throws Exception {
+        AtomicInteger launches = new AtomicInteger();
+        try (var client = new WorkerClient(() -> launch(
+                launches.incrementAndGet() == 1 ? "startup-crash" : "ok"),
+                Duration.ofSeconds(5), Duration.ofSeconds(5))) {
+            assertEquals(0, client.decide(REQUEST).get(10, TimeUnit.SECONDS).selected());
+            assertEquals(2, launches.get());
+            assertFalse(client.isClosed());
+        }
+        launches.set(0);
+        try (var client = new WorkerClient(() -> {
+            launches.incrementAndGet();
+            return launch("startup-crash");
+        }, Duration.ofSeconds(5), Duration.ofSeconds(5))) {
+            assertThrows(ExecutionException.class,
+                    () -> client.decide(REQUEST).get(10, TimeUnit.SECONDS));
+            assertEquals(2, launches.get(), "startup retry must be bounded");
+            assertTrue(client.isClosed());
+        }
+    }
+
     @Test void unloadsAfterIdleAndStartsAgainOnNextRequest() throws Exception {
         AtomicInteger launches = new AtomicInteger();
         AtomicReference<Process> first = new AtomicReference<>();

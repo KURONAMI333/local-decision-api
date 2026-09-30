@@ -49,6 +49,9 @@ public final class SomRouter implements AutoCloseable {
         SomChannel open(int loopbackPort);
     }
 
+    /** 1 active request plus 16 waiting, shared by native and CPU routes. */
+    private static final int MAX_PENDING = 17;
+
     private final SomNativeGate gate;
     private final NativeChannelFactory nativeFactory;
     private final SomChannel cpu;
@@ -99,8 +102,21 @@ public final class SomRouter implements AutoCloseable {
                         new IllegalStateException("router closed"));
                 return out;
             }
+            if (pending.size() >= MAX_PENDING) {
+                out.completeExceptionally(new RejectedExecutionException(
+                        "Local Decision API request queue is full"));
+                return out;
+            }
             pending.add(out);
         }
+        // Cancellation can happen after dispatch while a native response is
+        // pending. Its callback deliberately ignores a completed out, so the
+        // caller's cancellation must release this capacity itself.
+        out.whenComplete((reply, failure) -> {
+            if (out.isCancelled()) {
+                synchronized (this) { pending.remove(out); }
+            }
+        });
         try {
             seq.submit(() -> routeRequest(body, out));
         } catch (RejectedExecutionException race) {
@@ -134,14 +150,38 @@ public final class SomRouter implements AutoCloseable {
                 } catch (RuntimeException sync) {
                     call = CompletableFuture.failedFuture(sync);
                 }
+                CompletableFuture<JsonObject> nativeCall = call;
+                out.whenComplete((reply, failure) -> {
+                    if (out.isCancelled()) nativeCall.cancel(false);
+                });
                 call.orTimeout(requestTimeout.toMillis(), TimeUnit.MILLISECONDS)
                         .whenComplete((res, err) -> {
-                            if (err == null) {
-                                nativeOk();
-                                finish(out, new RouteReply(res, RouteUsed.NATIVE));
-                            } else {
-                                nativeFailed(); // wedged 報告 + 計数 + latch 判定
-                                seq.submit(() -> routeRequest(body, out)); // CPU で再挑戦
+                            // Handle completion on the routing executor. Closing a failed
+                            // channel completes every queued call; those callbacks must not
+                            // recursively invalidate the same worker.
+                            try {
+                                seq.execute(() -> {
+                                    if (out.isDone() || isClosed()) return;
+                                    if (err == null) {
+                                        nativeOk(ch);
+                                        finish(out, new RouteReply(res, RouteUsed.NATIVE));
+                                    } else {
+                                        Throwable cause = unwrap(err);
+                                        if (cause instanceof RejectedExecutionException) {
+                                            // Overload belongs to this request, not the worker.
+                                            finish(out, cause);
+                                            return;
+                                        }
+                                        if (!(cause instanceof IllegalArgumentException)) {
+                                            nativeFailed(ch);
+                                        }
+                                        // A model context/input rejection can still use CPU,
+                                        // but it must not destroy the healthy native worker.
+                                        serveOnCpu(body, out);
+                                    }
+                                });
+                            } catch (RejectedExecutionException stopped) {
+                                finish(out, new IllegalStateException("router closed"));
                             }
                         });
                 return;
@@ -161,30 +201,46 @@ public final class SomRouter implements AutoCloseable {
         return nativeChannel;
     }
 
-    private synchronized void nativeOk() {
+    private static Throwable unwrap(Throwable error) {
+        while ((error instanceof java.util.concurrent.CompletionException
+                || error instanceof java.util.concurrent.ExecutionException)
+                && error.getCause() != null) error = error.getCause();
+        return error;
+    }
+
+    private synchronized void nativeOk(SomChannel channel) {
+        if (closed || channel != nativeChannel) return;
         consecutiveNativeFailures = 0;
         status = Status.NATIVE;
         lastRoute = RouteUsed.NATIVE;
     }
 
-    private void nativeFailed() {
-        gate.invalidateWorker(); // 死亡/wedged — 次の demand で再起動
-        synchronized (this) {
-            if (nativeChannel != null) { nativeChannel.close(); nativeChannel = null; }
-            nativePort = -1;
-            consecutiveNativeFailures++;
-            if (consecutiveNativeFailures >= maxNativeFailures) circuitOpen = true;
-        }
+    private synchronized void nativeFailed(SomChannel failedChannel) {
+        // One physical worker failure counts once, even when close() fails many
+        // requests or callbacks from an older worker arrive after replacement.
+        if (closed || nativeChannel != failedChannel) return;
+        nativeChannel = null;
+        nativePort = -1;
+        consecutiveNativeFailures++;
+        if (consecutiveNativeFailures >= maxNativeFailures) circuitOpen = true;
+        gate.invalidateWorker();
+        failedChannel.close();
     }
 
     private void serveOnCpu(JsonObject body, CompletableFuture<RouteReply> out) {
+        if (out.isDone() || isClosed()) return;
         CompletableFuture<JsonObject> call;
         try {
             call = cpu.request(body); // native 側と同じ stall 対策
         } catch (RuntimeException sync) {
             call = CompletableFuture.failedFuture(sync);
         }
+        CompletableFuture<JsonObject> cpuCall = call;
+        out.whenComplete((reply, failure) -> {
+            if (out.isCancelled()) cpuCall.cancel(false);
+        });
         call.whenComplete((res, err) -> {
+            if (out.isDone() || isClosed()) return;
             if (err == null) {
                 synchronized (this) {
                     status = Status.DEGRADED;

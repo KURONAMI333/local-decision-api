@@ -8,7 +8,9 @@ public final class FakeWorker {
         var input = new DataInputStream(System.in);
         var output = new DataOutputStream(System.out);
         if (args[0].equals("startup-hang")) Thread.sleep(30_000);
+        if (args[0].equals("startup-crash")) return;
         WorkerClient.writeFrame(output, "{\"ready\":true}");
+        int seen = 0;
         while (true) {
             com.google.gson.JsonObject request;
             try { request = WorkerClient.readFrame(input); } catch (EOFException eof) { return; }
@@ -38,7 +40,8 @@ public final class FakeWorker {
                     var logits = new com.google.gson.JsonArray();
                     for (int i = 0; i < count; i++) { probabilities.add(1.0 / count); logits.add(0); }
                     var result = new com.google.gson.JsonObject();
-                    result.addProperty("selected", 0);
+                    // "probe" モードは2連続要求の2件目だけ 1 を返す(DeveloperProbe の検査列に合わせる)。
+                    result.addProperty("selected", args[0].equals("probe") && seen++ > 0 ? 1 : 0);
                     result.add("probabilities", probabilities);
                     result.add("logits", logits);
                     WorkerClient.writeFrame(output, result.toString());

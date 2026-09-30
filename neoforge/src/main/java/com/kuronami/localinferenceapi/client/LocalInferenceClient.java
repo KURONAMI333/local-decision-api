@@ -1,6 +1,7 @@
 package com.kuronami.localinferenceapi.client;
 
 import com.kuronami.localinferenceapi.Constants;
+import com.kuronami.localinferenceapi.internal.DeveloperProbe;
 import com.kuronami.localinferenceapi.internal.InferenceLifecycle;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -14,6 +15,9 @@ public final class LocalInferenceClient {
     private LocalInferenceClient() {}
     @SubscribeEvent public static void connected(ClientPlayerNetworkEvent.LoggingIn event) {
         InferenceLifecycle.initialize(FMLPaths.GAMEDIR.get());
+        // join 後に発火させる。MOD 初期化時の要求は doWorldLoad 冒頭の disconnect
+        // (正規 endSession) と確定的に競合する。起動1回の制限は probe 側が持つ。
+        DeveloperProbe.runIfRequested();
     }
     @SubscribeEvent public static void disconnected(ClientPlayerNetworkEvent.LoggingOut event) {
         InferenceLifecycle.endSession();

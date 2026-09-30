@@ -19,6 +19,20 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class ChannelTypedAdapterTest {
 
+    @Test void cancellationReachesTypedBackendFuture() {
+        CompletableFuture<DecisionResult> queued = new CompletableFuture<>();
+        TypedBackend backend = new TypedBackend() {
+            @Override public CompletableFuture<DecisionResult> decide(DecisionRequest r) { return queued; }
+            @Override public CompletableFuture<ScoreResult> score(ScoreRequest r) { throw new AssertionError(); }
+            @Override public CompletableFuture<NoulResult> noul(NoulRequest r) { throw new AssertionError(); }
+        };
+        ChannelTypedAdapter adapter = new ChannelTypedAdapter(backend);
+        DecisionRequest request = new DecisionRequest("ctx", "choice?", List.of("a", "b"));
+        CompletableFuture<JsonObject> answer = adapter.request(JevCodec.encodeDecision(request));
+        assertTrue(answer.cancel(false));
+        assertTrue(queued.isCancelled());
+    }
+
     /** canned 応答の typed backend。要求の到着を数え、close を記録する。 */
     private static final class FakeBackend implements TypedBackend {
         final AtomicInteger decides = new AtomicInteger();

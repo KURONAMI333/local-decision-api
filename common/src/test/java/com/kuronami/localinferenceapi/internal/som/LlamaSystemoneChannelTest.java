@@ -198,6 +198,47 @@ class LlamaSystemoneChannelTest {
         }
     }
 
+    @Test void routerOverflowPreservesAcceptedNativeRequestsAndNextRequest() throws Exception {
+        completionResponse = completionJson("A", "-0.1", "B", "-2.0");
+        completionGate = new CountDownLatch(1);
+        int port = start();
+        var invalidations = new java.util.concurrent.atomic.AtomicInteger();
+        var cpuCalls = new java.util.concurrent.atomic.AtomicInteger();
+        SomNativeGate gate = new SomNativeGate() {
+            public Availability ensureServing() { return Availability.SERVING; }
+            public int port() { return port; }
+            public void invalidateWorker() { invalidations.incrementAndGet(); }
+        };
+        var ch = new LlamaSystemoneChannel(
+                new LlamaClient(port, () -> "k", Duration.ofSeconds(10)),
+                Duration.ofSeconds(30), () -> {});
+        var router = new SomRouter(gate, ignored -> ch, body -> {
+            cpuCalls.incrementAndGet();
+            return java.util.concurrent.CompletableFuture.completedFuture(new JsonObject());
+        }, Duration.ofSeconds(30), 3);
+        var calls = new ArrayList<java.util.concurrent.CompletableFuture<SomRouter.RouteReply>>();
+        try {
+            for (int i = 0; i < 18; i++) calls.add(router.request(choiceBody()));
+            var overflow = assertThrows(ExecutionException.class,
+                    () -> calls.get(17).get(5, TimeUnit.SECONDS));
+            assertInstanceOf(java.util.concurrent.RejectedExecutionException.class, overflow.getCause());
+            assertEquals(0, invalidations.get());
+            completionGate.countDown();
+            for (int i = 0; i < 17; i++) {
+                assertEquals(SomRouter.RouteUsed.NATIVE,
+                        calls.get(i).get(30, TimeUnit.SECONDS).route(), "accepted request " + i);
+            }
+            assertEquals(SomRouter.RouteUsed.NATIVE,
+                    router.request(choiceBody()).get(10, TimeUnit.SECONDS).route());
+            assertEquals(0, invalidations.get());
+            assertEquals(0, cpuCalls.get());
+            assertFalse(router.nativeCircuitOpen());
+        } finally {
+            completionGate.countDown();
+            router.close();
+        }
+    }
+
     @Test void timeoutInterruptsWedgedCallAndQueueRecovers() throws Exception {
         completionResponse = completionJson("A", "-0.1");
         completionGate = new CountDownLatch(1);
@@ -219,6 +260,38 @@ class LlamaSystemoneChannelTest {
             assertTrue(res.has("answers"));
         } finally {
             completionGate.countDown();
+            ch.close();
+        }
+    }
+
+    @Test void cancellationInterruptsActiveCallAndUnblocksNextRequest() throws Exception {
+        completionResponse = completionJson("A", "-0.1");
+        int port = start();
+        var firstTokenize = new CountDownLatch(1);
+        var releaseFirst = new CountDownLatch(1);
+        var tokenizations = new java.util.concurrent.atomic.AtomicInteger();
+        server.removeContext("/tokenize");
+        server.createContext("/tokenize", ex -> {
+            if (tokenizations.incrementAndGet() == 1) {
+                firstTokenize.countDown();
+                try { releaseFirst.await(10, TimeUnit.SECONDS); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            }
+            respond(ex, 200, "{\"tokens\":[1,2,3]}");
+        });
+        var ch = new LlamaSystemoneChannel(
+                new LlamaClient(port, () -> "k", Duration.ofSeconds(10)),
+                Duration.ofSeconds(5), () -> {});
+        try {
+            var cancelled = ch.request(choiceBody());
+            assertTrue(firstTokenize.await(3, TimeUnit.SECONDS));
+            assertTrue(cancelled.cancel(false));
+            var next = ch.request(choiceBody());
+            assertTrue(next.get(3, TimeUnit.SECONDS).has("answers"),
+                    "a cancelled active HTTP call must release the serial executor");
+            assertTrue(tokenizations.get() >= 2);
+        } finally {
+            releaseFirst.countDown();
             ch.close();
         }
     }

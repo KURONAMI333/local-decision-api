@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.kuronami.localinferenceapi.api.DecisionRequest;
 import com.kuronami.localinferenceapi.api.NoulRequest;
 import com.kuronami.localinferenceapi.api.ScoreRequest;
+import com.kuronami.localinferenceapi.internal.CancellableFutures;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -38,7 +39,7 @@ public final class ChannelTypedAdapter implements SomChannel {
         else if (typed instanceof NoulRequest r) call = backend.noul(r);
         else return CompletableFuture.failedFuture(
                 new IllegalStateException("unsupported typed request"));
-        return call.thenApply(result -> {
+        return CancellableFutures.map(call, result -> {
             try {
                 return JevCodec.encodeAnswer(result, body);
             } catch (JevCodec.MappingException encode) {

@@ -381,6 +381,10 @@ final class LlamaGate implements SomNativeGate {
                 child = proc;
                 port = p;
                 apiKey = key;
+                // The first request falls back while provision runs. If no later
+                // request arrives, ensureServing() never gets to call touch().
+                // Start the idle clock as soon as the new worker is installed.
+                touch();
             }
             return Availability.SERVING;
         } catch (Throwable t) {

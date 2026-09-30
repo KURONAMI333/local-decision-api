@@ -17,7 +17,11 @@ tasks.register('developerKit', Zip) {
     from('LICENSING.md')
     from('THIRD_PARTY.md')
     from('runtime/MODEL.md') { into 'runtime' }
-    from(layout.buildDirectory.dir('developer-repository')) { into 'maven' }
+    // A reused build directory can contain older API versions. Ship only the
+    // version of this kit so the example cannot resolve stale contracts.
+    from(layout.buildDirectory.dir("developer-repository/com/kuronami/localinferenceapi/local-inference-api/${project.version}")) {
+        into "maven/com/kuronami/localinferenceapi/local-inference-api/${project.version}"
+    }
     from('examples/request-classifier') {
         into 'example'
         exclude '**/build/**', '**/.gradle/**', '**/run/**', '**/runs/**', '**/libs/**', '**/*.log', '**/.DS_Store', 'fixture-*/**', 'README.md', 'settings.gradle'

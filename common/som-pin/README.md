@@ -1,13 +1,13 @@
 # som-pin — SOM publisher pin packet (dev tooling)
 
-**Status (1.0.0): the packet bytes have been promoted into the
+**Status (1.0.x shipped pin): the packet bytes have been promoted into the
 shipped classpath.** The canonical copies now live at
 `common/src/main/resources/localinferenceapi/som/` (`manifest.json` +
 `licenses/*`), packaged into the loader jars. This directory keeps only the
 dev-side verification tooling:
 
 - `manifest.sha256` — sha256 of the shipped `manifest.json`
-  (`3744d73d6a1d35a802f737d09e7e856723c5f9cb6555c88b4ebe82f03f78c59c`).
+  (`44de3a679c4a079a796a3e3d95e579805adbe5d54b661be75b57079f2cc8351f`).
   **Not a trust anchor.** The real trust anchor is `SomPin.MANIFEST_SHA256`,
   the same digest compiled into product code; this sidecar exists for
   reproducible dev verification.

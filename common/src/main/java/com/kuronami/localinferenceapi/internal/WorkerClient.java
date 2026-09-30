@@ -13,7 +13,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** 1 プロセス・1 推論の境界。異常終了後に自動再起動して失敗を繰り返さない。
+/** 1 プロセス・1 推論の境界。初回 ready 前の早期終了だけ1回再試行する。
  *  opt-in SOM 経路では同じインスタンスが ChannelTypedAdapter の CPU backend になる。 */
 public final class WorkerClient implements AutoCloseable, TypedBackend {
     private static final int MAX_FRAME = 1_048_576;
@@ -183,25 +183,61 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
             if (terminalFailure != null) throw new IOException("Worker is closed");
             if (process != null) return;
         }
-        ScheduledFuture<?> deadline = deadline(startupTimeout, "Local Decision API startup timed out");
-        try {
-            Process created = launcher.launch();
-            synchronized (lock) {
-                if (terminalFailure != null) {
-                    terminate(created);
-                    throw new IOException("Worker closed during startup");
+        IOException firstExit = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            ScheduledFuture<?> deadline = deadline(startupTimeout, "Local Decision API startup timed out");
+            Process created = null;
+            try {
+                created = launcher.launch();
+                synchronized (lock) {
+                    if (terminalFailure != null) {
+                        terminate(created);
+                        throw new IOException("Worker closed during startup");
+                    }
+                    process = created;
+                    input = new DataInputStream(new BufferedInputStream(created.getInputStream()));
+                    output = new DataOutputStream(new BufferedOutputStream(created.getOutputStream()));
                 }
-                process = created;
-                input = new DataInputStream(new BufferedInputStream(created.getInputStream()));
-                output = new DataOutputStream(new BufferedOutputStream(created.getOutputStream()));
+                JsonObject ready = readFrame(input);
+                if (!ready.has("ready") || !ready.get("ready").isJsonPrimitive()
+                        || !ready.getAsJsonPrimitive("ready").isBoolean() || !ready.get("ready").getAsBoolean()) {
+                    throw new IOException("Worker did not report readiness");
+                }
+                return;
+            } catch (IOException failure) {
+                // Only an EOF before the first ready frame can be a native
+                // worker crash. Malformed frames, launch errors and model
+                // rejection are deterministic failures, not retry signals.
+                boolean exitedBeforeReady = failure instanceof EOFException
+                        && created != null && exited(created);
+                synchronized (lock) {
+                    if (process == created) {
+                        process = null;
+                        input = null;
+                        output = null;
+                    }
+                }
+                if (created != null && created.isAlive()) terminate(created);
+                if (attempt == 0 && exitedBeforeReady && !isClosed()) {
+                    firstExit = failure;
+                    System.err.println("[Local Decision API] worker exited before ready; retrying once");
+                    continue;
+                }
+                if (firstExit != null) failure.addSuppressed(firstExit);
+                throw failure;
+            } finally {
+                deadline.cancel(false);
             }
-            JsonObject ready = readFrame(input);
-            if (!ready.has("ready") || !ready.get("ready").isJsonPrimitive()
-                    || !ready.getAsJsonPrimitive("ready").isBoolean() || !ready.get("ready").getAsBoolean()) {
-                throw new IOException("Worker did not report readiness");
-            }
-        } finally {
-            deadline.cancel(false);
+        }
+    }
+
+    private static boolean exited(Process process) {
+        if (!process.isAlive()) return true;
+        try {
+            return process.waitFor(250, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 

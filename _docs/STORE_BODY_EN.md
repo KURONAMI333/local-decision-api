@@ -1,12 +1,12 @@
 **A library for mods that need to make a choice.** A companion mod, for example, can send “follow the player,” “return home,” and “fight” along with what is happening in the game. Local Decision API returns a choice; the companion mod decides what to do with it. It can also return a score or estimate how likely a statement is.
 
-If a mod you use lists Local Decision API as a dependency, install it alongside that mod. Mod authors can start with the [developer kit and working example](https://github.com/KURONAMI333/local-decision-api/releases/tag/v1.0.0) or read the [integration guide](https://github.com/KURONAMI333/local-decision-api#for-mod-developers).
+If a mod you use lists Local Decision API as a dependency, install it alongside that mod. Mod authors can start with the [developer kit and working example](https://github.com/KURONAMI333/local-decision-api/releases/tag/v1.0.1) or read the [integration guide](https://github.com/KURONAMI333/local-decision-api#for-mod-developers).
 
 ### The model
 
 [System One Models (SOMs)](https://typesafe.ai/blog/introducing-system-one-models-and-jev) are built around structured decisions: a defined question produces a choice, score, or probability. This API uses that style of question. This release uses [JevK5-4B v0.3](https://github.com/allebee/jevk5) as its primary model. Its [model card](https://huggingface.co/alibiserikbay/JevK5) describes the weights and training; this mod supplies the Minecraft integration, request handling, and a bundled fallback model.
 
-The mod downloads about **3.1 GB** of model and runtime files on first use and keeps them in the game directory for later offline use. The mod JAR is about **450 MB** because it includes the fallback model. Inference uses the host computer's RAM and, when available, GPU memory. A rented server must permit the download and a worker process. Results are model estimates, so a calling mod should handle uncertain or unsuitable answers in its own logic.
+On a supported native route, the mod downloads about **3.1 GB** of model and runtime files on first use and keeps them in the game directory for later offline use. The mod JAR is about **450 MB** because it includes the fallback model. Inference uses the host computer's RAM and, when available, GPU memory. A rented server must permit the download and a worker process for the native route. Results are model estimates, so a calling mod should handle uncertain or unsuitable answers in its own logic.
 
 ### For mod authors
 

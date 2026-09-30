@@ -53,7 +53,7 @@ public final class InferenceLifecycle {
         if (!enabled) return CompletableFuture.failedFuture(new IllegalStateException("Local Decision API is not initialized"));
         if (worker == null) worker = workerFactory.apply(gameDirectory);
         if (!somOptIn) return worker.decide(request);
-        return som().decide(request).thenApply(reply -> reply.result());
+        return CancellableFutures.map(som().decide(request), reply -> reply.result());
     }
 
     public static synchronized CompletableFuture<ScoreResult> score(ScoreRequest request) {
@@ -61,7 +61,7 @@ public final class InferenceLifecycle {
         if (!enabled) return CompletableFuture.failedFuture(new IllegalStateException("Local Decision API is not initialized"));
         if (worker == null) worker = workerFactory.apply(gameDirectory);
         if (!somOptIn) return worker.score(request);
-        return som().score(request).thenApply(reply -> reply.result());
+        return CancellableFutures.map(som().score(request), reply -> reply.result());
     }
 
     public static synchronized CompletableFuture<NoulResult> noul(NoulRequest request) {
@@ -69,7 +69,7 @@ public final class InferenceLifecycle {
         if (!enabled) return CompletableFuture.failedFuture(new IllegalStateException("Local Decision API is not initialized"));
         if (worker == null) worker = workerFactory.apply(gameDirectory);
         if (!somOptIn) return worker.noul(request);
-        return som().noul(request).thenApply(reply -> reply.result());
+        return CancellableFutures.map(som().noul(request), reply -> reply.result());
     }
 
     private static SomTypedClient som() {

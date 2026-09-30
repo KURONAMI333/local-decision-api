@@ -7,6 +7,7 @@ import com.kuronami.localinferenceapi.api.NoulRequest;
 import com.kuronami.localinferenceapi.api.NoulResult;
 import com.kuronami.localinferenceapi.api.ScoreRequest;
 import com.kuronami.localinferenceapi.api.ScoreResult;
+import com.kuronami.localinferenceapi.internal.CancellableFutures;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -44,7 +45,7 @@ public final class SomTypedClient implements AutoCloseable {
 
     private <T> CompletableFuture<TypedReply<T>> call(
             JsonObject body, ThrowingParser<T> parser) {
-        return router.request(body).thenApply(reply -> {
+        return CancellableFutures.map(router.request(body), reply -> {
             try {
                 return new TypedReply<>(parser.parse(reply.body()), reply.route());
             } catch (Exception bad) {

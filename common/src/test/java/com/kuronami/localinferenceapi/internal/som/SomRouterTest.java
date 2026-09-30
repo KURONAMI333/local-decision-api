@@ -2,6 +2,8 @@ package com.kuronami.localinferenceapi.internal.som;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.kuronami.localinferenceapi.api.DecisionRequest;
+import com.kuronami.localinferenceapi.internal.CancellableFutures;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -9,8 +11,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -88,6 +92,33 @@ class SomRouterTest {
         } catch (Exception e) { throw new AssertionError(e); }
     }
 
+    @Test void cancellationAfterNativeDispatchReleasesRouterCapacity() throws Exception {
+        FakeGate gate = new FakeGate(SomNativeGate.Availability.SERVING);
+        gate.port = 4242;
+        BlockingQueue<CompletableFuture<JsonObject>> dispatched = new LinkedBlockingQueue<>();
+        FakeChannel nativeChannel = new FakeChannel(body -> {
+            CompletableFuture<JsonObject> response = new CompletableFuture<>();
+            dispatched.add(response);
+            return response;
+        });
+        try (SomRouter router = router(gate, port -> nativeChannel,
+                new FakeChannel(SomRouterTest::ok))) {
+            for (int i = 0; i < 17; i++) {
+                CompletableFuture<SomRouter.RouteReply> cancelled = router.request(new JsonObject());
+                CompletableFuture<JsonObject> response = dispatched.poll(3, TimeUnit.SECONDS);
+                assertNotNull(response, "native request was not dispatched");
+                assertTrue(cancelled.cancel(false));
+                assertTrue(response.isCancelled(), "cancellation must reach native channel");
+                response.complete(cannedOk());
+            }
+            CompletableFuture<SomRouter.RouteReply> next = router.request(new JsonObject());
+            CompletableFuture<JsonObject> response = dispatched.poll(3, TimeUnit.SECONDS);
+            assertNotNull(response, "cancelled requests must not fill router capacity");
+            response.complete(cannedOk());
+            assertEquals(SomRouter.RouteUsed.NATIVE, next.get(3, TimeUnit.SECONDS).route());
+        }
+    }
+
     @Test void noCommitDegradesToCpu() {
         FakeGate gate = new FakeGate(SomNativeGate.Availability.NO_COMMIT);
         FakeChannel cpu = new FakeChannel(SomRouterTest::ok);
@@ -98,6 +129,70 @@ class SomRouterTest {
             assertEquals(SomNativeGate.Availability.NO_COMMIT, r.lastNativeAvailability());
             assertFalse(r.trustFailure());
         } catch (Exception e) { throw new AssertionError(e); }
+    }
+
+    @Test void cancellingMappedPublicRequestSkipsQueuedBackendCall() throws Exception {
+        CountDownLatch routingStarted = new CountDownLatch(1);
+        CountDownLatch releaseRouting = new CountDownLatch(1);
+        AtomicInteger gateCalls = new AtomicInteger();
+        SomNativeGate gate = new SomNativeGate() {
+            @Override public Availability ensureServing() {
+                if (gateCalls.getAndIncrement() == 0) {
+                    routingStarted.countDown();
+                    try {
+                        assertTrue(releaseRouting.await(3, TimeUnit.SECONDS));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                return Availability.NO_COMMIT;
+            }
+            @Override public int port() { return -1; }
+            @Override public void invalidateWorker() {}
+        };
+        FakeChannel cpu = new FakeChannel(SomRouterTest::ok);
+        try (SomRouter router = router(gate, port -> { throw new AssertionError(); }, cpu);
+             SomTypedClient typed = new SomTypedClient(router)) {
+            var first = router.request(new JsonObject());
+            assertTrue(routingStarted.await(3, TimeUnit.SECONDS));
+            var queued = CancellableFutures.map(
+                    typed.decide(new DecisionRequest("context", "question",
+                            List.of("first", "second"))), reply -> reply.result());
+            assertTrue(queued.cancel(false));
+            releaseRouting.countDown();
+            first.get(3, TimeUnit.SECONDS);
+            router.request(new JsonObject()).get(3, TimeUnit.SECONDS);
+            assertEquals(2, cpu.calls.get(),
+                    "cancelled second request must not reach the CPU backend");
+        } finally {
+            releaseRouting.countDown();
+        }
+    }
+
+    @Test void cancelledCpuRequestDoesNotMarkBackendDisabled() throws Exception {
+        FakeGate gate = new FakeGate(SomNativeGate.Availability.NO_COMMIT);
+        CompletableFuture<JsonObject> pending = new CompletableFuture<>();
+        CountDownLatch dispatched = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        FakeChannel cpu = new FakeChannel(body -> {
+            if (calls.incrementAndGet() == 2) {
+                dispatched.countDown();
+                return pending;
+            }
+            return CompletableFuture.completedFuture(cannedOk());
+        });
+        try (SomRouter router = router(gate, port -> { throw new AssertionError(); }, cpu)) {
+            router.request(new JsonObject()).get(3, TimeUnit.SECONDS);
+            assertEquals(SomRouter.Status.DEGRADED, router.status());
+            CompletableFuture<SomRouter.RouteReply> cancelled = router.request(new JsonObject());
+            assertTrue(dispatched.await(3, TimeUnit.SECONDS));
+            assertTrue(cancelled.cancel(false));
+            assertTrue(pending.isCancelled(), "cancellation must reach the CPU backend");
+            assertEquals(SomRouter.Status.DEGRADED, router.status(),
+                    "caller cancellation is not a backend failure");
+            router.request(new JsonObject()).get(3, TimeUnit.SECONDS);
+            assertEquals(SomRouter.Status.DEGRADED, router.status());
+        }
     }
 
     @Test void tamperLatchesTrustFailureAndServesCpu() {
@@ -150,6 +245,74 @@ class SomRouterTest {
             assertEquals(SomRouter.Status.DEGRADED, r.status());
             assertTrue(gate.invalidations.get() >= 3, "wedged worker は都度報告する");
         } catch (Exception e) { throw new AssertionError(e); }
+    }
+
+    @Test void channelOverloadDoesNotInvalidateHealthyWorker() throws Exception {
+        FakeGate gate = new FakeGate(SomNativeGate.Availability.SERVING);
+        FakeChannel cpu = new FakeChannel(SomRouterTest::ok);
+        AtomicInteger count = new AtomicInteger();
+        try (SomRouter r = router(gate, port -> new FakeChannel(body -> {
+            if (count.getAndIncrement() == 0) return CompletableFuture.failedFuture(
+                    new java.util.concurrent.RejectedExecutionException("saturated"));
+            return ok(body);
+        }), cpu)) {
+            var error = assertThrows(ExecutionException.class,
+                    () -> r.request(new JsonObject()).get(5, TimeUnit.SECONDS));
+            assertInstanceOf(java.util.concurrent.RejectedExecutionException.class, error.getCause());
+            assertEquals(SomRouter.RouteUsed.NATIVE,
+                    r.request(new JsonObject()).get(5, TimeUnit.SECONDS).route());
+            assertEquals(0, gate.invalidations.get());
+            assertEquals(0, cpu.calls.get());
+            assertFalse(r.nativeCircuitOpen());
+        }
+    }
+
+    @Test void contextRejectionUsesCpuWithoutPoisoningNativeWorker() throws Exception {
+        FakeGate gate = new FakeGate(SomNativeGate.Availability.SERVING);
+        FakeChannel cpu = new FakeChannel(SomRouterTest::ok);
+        AtomicInteger count = new AtomicInteger();
+        try (SomRouter r = router(gate, port -> new FakeChannel(body -> {
+            if (count.getAndIncrement() == 0) return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("question exceeds model context"));
+            return ok(body);
+        }), cpu)) {
+            assertEquals(SomRouter.RouteUsed.CPU,
+                    r.request(new JsonObject()).get(5, TimeUnit.SECONDS).route());
+            assertEquals(SomRouter.RouteUsed.NATIVE,
+                    r.request(new JsonObject()).get(5, TimeUnit.SECONDS).route());
+            assertEquals(0, gate.invalidations.get());
+            assertEquals(1, cpu.calls.get());
+            assertFalse(r.nativeCircuitOpen());
+        }
+    }
+
+    @Test void oneWorkerFailureInvalidatesOnceForAllAffectedRequests() throws Exception {
+        FakeGate gate = new FakeGate(SomNativeGate.Availability.SERVING);
+        FakeChannel cpu = new FakeChannel(SomRouterTest::ok);
+        List<CompletableFuture<JsonObject>> nativeCalls = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CountDownLatch allRouted = new CountDownLatch(3);
+        SomChannel channel = new SomChannel() {
+            public CompletableFuture<JsonObject> request(JsonObject body) {
+                var call = new CompletableFuture<JsonObject>();
+                nativeCalls.add(call);
+                allRouted.countDown();
+                return call;
+            }
+            public void close() {
+                nativeCalls.forEach(call -> call.completeExceptionally(new IOException("closed")));
+            }
+        };
+        try (SomRouter r = router(gate, port -> channel, cpu)) {
+            List<CompletableFuture<SomRouter.RouteReply>> requests = new ArrayList<>();
+            for (int i = 0; i < 3; i++) requests.add(r.request(new JsonObject()));
+            assertTrue(allRouted.await(3, TimeUnit.SECONDS));
+            nativeCalls.get(0).completeExceptionally(new IOException("transport failed"));
+            for (var request : requests) assertEquals(SomRouter.RouteUsed.CPU,
+                    request.get(5, TimeUnit.SECONDS).route());
+            assertEquals(1, gate.invalidations.get(), "one worker death, not three failed calls");
+            assertFalse(r.nativeCircuitOpen());
+            assertEquals(3, cpu.calls.get());
+        }
     }
 
     @Test void dualFailureDisablesAndCompletesExceptionally() {

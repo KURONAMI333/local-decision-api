@@ -23,7 +23,7 @@ repositories {
     maven { url = uri('/absolute/path/to/this-kit/maven') }
 }
 dependencies {
-    compileOnly 'com.kuronami.localinferenceapi:local-inference-api:1.0.0'
+    compileOnly 'com.kuronami.localinferenceapi:local-inference-api:1.0.1'
 }
 ```
 

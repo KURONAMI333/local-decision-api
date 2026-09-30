@@ -18,7 +18,7 @@ Then, from this example directory:
 ./gradlew build -PlocalInferenceRepository=/absolute/path/to/local-inference-api/build/developer-repository
 ```
 
-`localInferenceRepository` accepts a local path or URI. If omitted, the example uses `../../build/developer-repository` relative to this example root. The dependency coordinate is `com.kuronami.localinferenceapi:local-inference-api:1.0.0`; it is compile-only and is not bundled into the example.
+`localInferenceRepository` accepts a local path or URI. If omitted, the example uses `../../build/developer-repository` relative to this example root. The dependency coordinate is `com.kuronami.localinferenceapi:local-inference-api:1.0.1`; it is compile-only and is not bundled into the example.
 
 The loader JARs appear under `fabric/build/libs/` and `neoforge/build/libs/`. Install the example JAR and the matching **full Local Decision API MOD JAR** together. The small Maven API artifact is not a runnable MOD. Both loader manifests declare `localinferenceapi` as required.
 
@@ -54,7 +54,7 @@ MIT. The template notice is preserved in `LICENSE`, alongside the example implem
 
 ## Separate consumer and failure fixture
 
-`fixture-fabric` and `fixture-neoforge` build a **second MOD**, ID `inferencesharedfixture`, with separate entry points and its own direct compile-only Maven API dependency. Install the matching `inference-shared-fixture-<loader>-1.21.1-1.0.0.jar` alongside the example and the library only in an isolated development server. The fixture contains no copy of the first consumer or library implementation.
+`fixture-fabric` and `fixture-neoforge` build a **second MOD**, ID `inferencesharedfixture`, with separate entry points and its own direct compile-only Maven API dependency. Install the matching `inference-shared-fixture-<loader>-1.21.1-1.0.1.jar` alongside the example and the library only in an isolated development server. The fixture contains no copy of the first consumer or library implementation.
 
 Both consumers run only with `-Dinferenceexample.smoke=true`. Their request time intervals must overlap. The fixture verifies that both consumer MODs complete requests, server ticks advance, and exactly one matching child worker exists. Success logs include `INFERENCE_CONCURRENT_REQUESTS_PASS` and `INFERENCE_SHARED_WORKER_PASS`.
 

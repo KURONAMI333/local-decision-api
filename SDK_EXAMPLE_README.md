@@ -12,6 +12,6 @@ Use JDK 21. From this `example/` directory, run:
 
 On Windows, use `gradlew.bat`. The Maven directory is supplied alongside this example in the developer kit. The small API JAR is a compile-only dependency; it is not a Minecraft mod. Install the matching **full Local Decision API MOD JAR** alongside the built example JAR to try the command.
 
-The implementation in `common/` creates a `DecisionRequest`, calls `LocalInference.decide`, handles failure and abstention, switches back to the server thread, and checks that the original player and world still exist. `fabric/` and `neoforge/` provide the loader entry points and declare `localinferenceapi` as a required dependency.
+The implementation in `common/` creates a `DecisionRequest`, calls `LocalInference.decide`, handles failures, switches back to the server thread, and checks that the original player and world still exist. `fabric/` and `neoforge/` provide the loader entry points and declare `localinferenceapi` as a required dependency.
 
 The model can answer incorrectly. Do not treat its answer or score as permission to change the game world without your own checks.

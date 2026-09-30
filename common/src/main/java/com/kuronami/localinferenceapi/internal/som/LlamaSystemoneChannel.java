@@ -20,8 +20,8 @@ import java.util.concurrent.TimeoutException;
  *
  * llama-server は単一 slot で使うため request は専用の単一スレッド
  * executor で直列化し、queue は WorkerClient と同じ 16 で束ねる — 超過分は
- * RejectedExecutionException で即座に失敗し、router が CPU 経路へ退避させる
- * (待ち行列を無制限にしない)。requestTimeout で打ち切られた要求は実行
+ * RejectedExecutionException で即座に失敗し、router は要求単位の拒否として
+ * 配送する(正常な worker を停止したり、CPU へ負荷を転送しない)。requestTimeout で打ち切られた要求は実行
  * thread を interrupt して解放し、後続の request を wedged にしない
  * (HttpClient.send は割込みで失敗する)。
  */
@@ -62,6 +62,7 @@ final class LlamaSystemoneChannel implements SomChannel {
             inflight.add(out);
             task[0] = exec.submit(() -> {
                 try {
+                    if (out.isDone()) return;
                     onActivity.run();
                     out.complete(call(body));
                 } catch (Throwable t) {
@@ -73,7 +74,7 @@ final class LlamaSystemoneChannel implements SomChannel {
         } catch (RejectedExecutionException closed) {
             // shutdown 済み or bounded queue 満杯 — 即座に失敗で返す
             inflight.remove(out);
-            out.completeExceptionally(new IOException(
+            out.completeExceptionally(new RejectedExecutionException(
                     "native channel closed or saturated", closed));
             return out;
         }
@@ -83,7 +84,7 @@ final class LlamaSystemoneChannel implements SomChannel {
         out.orTimeout(requestTimeout.toMillis(), TimeUnit.MILLISECONDS)
                 .whenComplete((r, e) -> {
                     inflight.remove(out);
-                    if (e instanceof TimeoutException && task[0] != null) {
+                    if ((e instanceof TimeoutException || out.isCancelled()) && task[0] != null) {
                         task[0].cancel(true);
                     }
                 });
