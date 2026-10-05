@@ -1,0 +1,24 @@
+modLoader = "javafml"
+loaderVersion = "${forge_loader_version_range}"
+license = "${license}"
+[[mods]]
+modId = "${mod_id}"
+version = "${version}"
+displayName = "${mod_name}"
+logoFile = "logo.png"
+displayURL = "https://www.curseforge.com/minecraft/mc-mods/local-inference-api"
+credits = "${credits}"
+authors = "${mod_author}"
+description = '''${description}'''
+[[dependencies.${mod_id}]]
+modId = "forge"
+mandatory = true
+versionRange = "[47,)"
+ordering = "NONE"
+side = "BOTH"
+[[dependencies.${mod_id}]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${forge_minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"

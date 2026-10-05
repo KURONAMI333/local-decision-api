@@ -47,3 +47,19 @@ shadowJar {
  manifest { attributes 'Main-Class': 'com.kuronami.localinferenceapi.runtime.Worker', 'Multi-Release': 'true' }
  zip64 = true
 }
+
+// 内側 runtime.jar 自身にも同じ fail-closed EXE gate を掛ける。
+// loader JAR 側の検査でネスト経由でも検出されるが、runtime 単独 build でも止める。
+tasks.register('verifyNoExecutableContent') {
+ group = 'verification'
+ description = 'Fail the build if runtime.jar contains a PE executable at any nesting depth.'
+ dependsOn tasks.named('shadowJar')
+ doLast {
+  exec {
+   commandLine 'python3', rootProject.file('tools/exe_scan_gate.py').absolutePath, layout.buildDirectory.file('libs/runtime.jar').get().asFile.absolutePath
+  }
+ }
+}
+tasks.named('check') {
+ dependsOn tasks.named('verifyNoExecutableContent')
+}

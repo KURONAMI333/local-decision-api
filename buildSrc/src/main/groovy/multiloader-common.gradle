@@ -101,6 +101,9 @@ processResources {
             'neoforge_loader_version_range': neoforge_loader_version_range,
             "forge_version": forge_version,
             "forge_loader_version_range": forge_loader_version_range,
+            "forge_minecraft_version": forge_minecraft_version,
+            "forge_minecraft_version_range": forge_minecraft_version_range,
+            "forge_parchment_version": forge_parchment_version,
             'credits'                      : credits,
             'java_version'                 : java_version
     ]

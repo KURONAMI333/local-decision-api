@@ -165,7 +165,9 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
         }
         // 利用側の同期 callback が停止しても、次の推論を止めない。
         // この thread は通知専用であり、native 推論は executor 上に留める。
-        Thread.startVirtualThread(() -> {
+        // CompletionThreads は Java21 の virtual thread を維持し、Java17 の
+        // Forge cell では同じ非同期配送を daemon thread で行う。
+        CompletionThreads.start(() -> {
             if (failure == null) future.complete(result);
             else future.completeExceptionally(failure);
         });
@@ -335,14 +337,22 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
         Path cache = gameDirectory.resolve(".localinferenceapi/runtime");
         Path jar = RuntimeCache.extract(cache, () -> WorkerClient.class.getResourceAsStream("/localinferenceapi/runtime.jar"));
         boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
-        Path java = Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java");
+        // runtime.jar は Java 21 以上で動く。Java 17 サーバーでは
+        // -Dlocalinferenceapi.worker.java=<java21+ の絶対パス> で worker の
+        // 実行ファイルを明示できる (未設定ならホストの java.home を使う)。
+        String override = System.getProperty("localinferenceapi.worker.java");
+        Path java = (override == null || override.isBlank())
+                ? Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java")
+                : Path.of(override);
         Path log = cache.resolve("worker-" + ProcessHandle.current().pid() + ".log");
         ProcessBuilder builder = new ProcessBuilder(java.toString(), "-Xmx2G", "-jar", jar.toString(), "--worker")
                 .directory(gameDirectory.toFile()).redirectError(ProcessBuilder.Redirect.appendTo(log.toFile()));
         builder.environment().put("DJL_OFFLINE", "true");
         builder.environment().put("HF_HUB_OFFLINE", "1");
         builder.environment().put("TRANSFORMERS_OFFLINE", "1");
-        return builder.start();
+        Process worker = builder.start();
+        System.err.println("[Local Decision API] worker spawned pid=" + worker.pid() + " jar=" + jar + " log=" + log);
+        return worker;
     }
 
     private void fail(Throwable failure) {
@@ -361,7 +371,7 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
         if (stopped != null) terminate(stopped);
         // ある利用側の同期 callback が止まっても、他の待機要求と停止元を巻き込まない。
         // native 推論は virtual thread 上では動かさない。
-        unfinished.forEach(future -> Thread.startVirtualThread(() -> future.completeExceptionally(failure)));
+        unfinished.forEach(future -> CompletionThreads.start(() -> future.completeExceptionally(failure)));
     }
 
     private static boolean terminate(Process process) {

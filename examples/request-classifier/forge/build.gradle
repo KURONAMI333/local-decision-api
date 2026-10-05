@@ -1,0 +1,48 @@
+// Forge 1.20.1 consumer cell for the example mod: Java 17 toolchain, canonical
+// 'official' mapping channel (offline from the standard plugin repositories).
+plugins {
+    id 'multiloader-loader'
+    id 'net.minecraftforge.gradle'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+base {
+    archivesName = 'inferenceexample-forge-1.20.1'
+}
+
+// The shared loader script adds compileOnly(project(':common')) (Java-21
+// apiElements jar) and multiloader-common adds compileOnly on
+// local-inference-api:1.0.2 (class-major 65). Both are unreadable on the Java-17
+// toolchain, so the compileOnly configuration is cleared; common sources are
+// still compiled via commonJava, and the Java-17 API artifact is added below.
+configurations.named('compileOnly') {
+    dependencies.clear()
+}
+
+dependencies {
+    compileOnly 'com.kuronami.localinferenceapi:local-inference-api-forge17:1.0.2'
+    minecraft "net.minecraftforge:forge:1.20.1-47.4.13"
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    copyIdeResources = true
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.enabledGameTestNamespaces', mod_id
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+        client { workingDirectory project.file('run') }
+        server { workingDirectory project.file('run/server') }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }

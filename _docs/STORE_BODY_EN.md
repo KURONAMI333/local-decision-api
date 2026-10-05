@@ -1,6 +1,6 @@
 **A library for mods that need to make a choice.** A companion mod, for example, can send “follow the player,” “return home,” and “fight” along with what is happening in the game. Local Decision API returns a choice; the companion mod decides what to do with it. It can also return a score or estimate how likely a statement is.
 
-If a mod you use lists Local Decision API as a dependency, install it alongside that mod. Mod authors can start with the [developer kit and working example](https://github.com/KURONAMI333/local-decision-api/releases/tag/v1.0.1) or read the [integration guide](https://github.com/KURONAMI333/local-decision-api#for-mod-developers).
+If a mod you use lists Local Decision API as a dependency, install it alongside that mod. Mod authors can start with the [developer kit and working example](https://github.com/KURONAMI333/local-decision-api/releases) or read the [integration guide](https://github.com/KURONAMI333/local-decision-api#for-mod-developers).
 
 ### The model
 

@@ -52,3 +52,4 @@ include('neoforge')
 
 include('fixture-fabric')
 include('fixture-neoforge')
+include('forge')

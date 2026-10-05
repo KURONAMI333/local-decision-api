@@ -1,0 +1,55 @@
+// Forge 1.20.1 cell. Mappings use ForgeGradle's canonical 'official' channel:
+// joined srg jar + mcp_mappings.tsrg + ForgeAutoRenamingTool are all in the
+// local cache, so the mapped artifact is generated offline with zero extra
+// plugins (the parchment/librarian plugin's dev-SNAPSHOT marker is not
+// offline-resolvable on a clean machine). The adapter touches only stable
+// Forge/FML API classes — no Minecraft classes — so the mapping channel has
+// no effect on the compiled bytecode.
+
+plugins {
+    id 'multiloader-loader'
+    id 'net.minecraftforge.gradle'
+}
+
+// Forge 1.20.1 cell: Java 17 toolchain; the mod jar must be class-file major 61.
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+// multiloader-common names artifacts with the root minecraft_version (1.21.1);
+// this cell's jar must name its own MC version.
+base {
+    archivesName = "${mod_id}-forge-${forge_minecraft_version}"
+}
+
+// The shared loader script adds compileOnly(project(':common')), which resolves
+// common's Java-21 apiElements jar onto this module's Java-17 classpath and
+// breaks javac. Common is loader-neutral pure Java, so compiling its sources
+// via commonJava (already wired by multiloader-loader) is sufficient.
+configurations.named('compileOnly') {
+    dependencies.clear()
+}
+
+minecraft {
+    mappings channel: 'official', version: "${forge_minecraft_version}"
+    copyIdeResources = true
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.enabledGameTestNamespaces', mod_id
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+        client { workingDirectory project.file('run') }
+        server { workingDirectory project.file('run/server') }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${forge_minecraft_version}-${forge_version}"
+}
