@@ -7,10 +7,13 @@ built in a temp directory -- no real mod jars are needed, so the suite can run
 anywhere.
 
 Covered properties:
-  1. A clean jar (classes + resources + a native DLL) passes with rc 0.
+  1. A clean jar (classes + resources) passes with rc 0; a non-native file
+     that merely has a library extension is only a warning.
   2. A real PE executable fails even under a non-.exe name (MZ + PE\\0\\0,
      characteristics without the DLL bit).
-  3. A PE image WITH the DLL bit does not fail (DLLs are legal JNI natives).
+  3. A PE image WITH the DLL bit fails too (1.0.3 ships no native library),
+     and so do ELF, thin/fat Mach-O and ar archives; a Java class file, which
+     shares the fat Mach-O magic, does not.
   4. An entry merely *named* .exe fails even if its bytes are not PE.
   5. An exe inside a nested zip works at any depth, and a nested archive is
      found by its PK magic even when the member name does not end in a known
@@ -48,6 +51,11 @@ def _pe(dll: bool = False, machine: int = 0x8664) -> bytes:
     return bytes(b)
 
 
+def _class_file(major: int = 65) -> bytes:
+    """Java class header: cafebabe, minor 0, major version."""
+    return b"\xca\xfe\xba\xbe" + struct.pack(">HH", 0, major) + b"\x00" * 56
+
+
 def _zip_bytes(members: dict[str, bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -77,10 +85,10 @@ def test_clean_jar_passes(tmp_path: Path):
         "clean.jar",
         _zip_bytes(
             {
-                "com/example/Foo.class": b"\xca\xfe\xba\xbe" + b"\x00" * 64,
+                "com/example/Foo.class": _class_file(),
                 "config.json": b"{}",
-                "native/win-x86_64/cpu/tokenizers.dll": _pe(dll=True),
-                "native/lib/linux-x86_64/libx.so": b"\x7fELF" + b"\x02" * 60,
+                "native/lib/tokenizers.properties": b"version=0.38.0",
+                "docs/readme.dll": b"plain text, not a library",
             }
         ),
     )
@@ -88,7 +96,7 @@ def test_clean_jar_passes(tmp_path: Path):
     assert r.returncode == 0, r.stderr
     out = exe_scan_gate.scan_path(str(jar))
     assert out["exe_failures"] == 0 and not out["errors"]
-    assert out["warnings"] >= 1  # the DLL is reported as a warning
+    assert out["warnings"] >= 1  # the .dll name is reported as a warning
 
 
 def test_pe_exe_under_data_name_fails(tmp_path: Path):
@@ -104,10 +112,43 @@ def test_dot_exe_name_fails_without_pe(tmp_path: Path):
     assert r.returncode == 2
 
 
-def test_dll_does_not_fail(tmp_path: Path):
+def test_dll_fails(tmp_path: Path):
     jar = _write(tmp_path, "c.jar", _zip_bytes({"lib/helper.dll": _pe(dll=True)}))
     r = _run_gate(jar)
+    assert r.returncode == 2
+    assert "PE_DLL" in r.stderr
+
+
+def test_elf_fails_under_any_name(tmp_path: Path):
+    jar = _write(tmp_path, "c2.jar", _zip_bytes({"data/blob.bin": b"\x7fELF" + b"\x02" * 60}))
+    r = _run_gate(jar)
+    assert r.returncode == 2
+    assert "ELF" in r.stderr
+
+
+def test_thin_macho_fails_in_both_byte_orders(tmp_path: Path):
+    for magic in (b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xce"):
+        jar = _write(tmp_path, "c3.jar", _zip_bytes({"lib/x.bin": magic + b"\x00" * 60}))
+        r = _run_gate(jar)
+        assert r.returncode == 2, magic
+        assert "MACHO" in r.stderr
+
+
+def test_fat_macho_fails_but_class_file_passes(tmp_path: Path):
+    fat = b"\xca\xfe\xba\xbe" + struct.pack(">I", 2) + b"\x00" * 56
+    jar = _write(tmp_path, "c4.jar", _zip_bytes({"lib/universal": fat}))
+    r = _run_gate(jar)
+    assert r.returncode == 2
+    assert "MACHO_FAT" in r.stderr
+    ok = _write(tmp_path, "c5.jar", _zip_bytes({"A.class": _class_file(65), "B.class": _class_file(45)}))
+    r = _run_gate(ok)
     assert r.returncode == 0, r.stderr
+
+
+def test_ar_archive_fails(tmp_path: Path):
+    jar = _write(tmp_path, "c6.jar", _zip_bytes({"com/sun/jna/aix-ppc/libjnidispatch.a": b"!<arch>\n" + b"\x00" * 60}))
+    r = _run_gate(jar)
+    assert r.returncode == 2
 
 
 def test_nested_archive_by_magic_any_name(tmp_path: Path):
@@ -193,6 +234,11 @@ def test_far_pe_signature_beyond_head_fails(tmp_path: Path):
     jar = _write(tmp_path, "l.jar", _zip_bytes({"x.bin": bytes(b)}))
     r = _run_gate(jar)
     assert r.returncode == 2
+
+
+def test_missing_input_fails_closed(tmp_path: Path):
+    r = _run_gate(tmp_path / "missing.jar")
+    assert r.returncode == 3, r.stderr
 
 
 def main() -> int:

@@ -8,7 +8,7 @@ The model is not created or trained by KURONAMI333. The original and conversion 
 
 1. Run `python3 runtime/tools/fetch_model.py` from the repository root. This build-time script downloads pinned files and verifies SHA-256. `runtime/models/` is ignored by Git.
 2. Use JDK 21 and run `./gradlew :runtime:shadowJar --no-build-cache`.
-3. Run `python3 runtime/tools/smoke.py runtime/build/libs/runtime.jar`. The clean-cache test checks Choice, Score and Noul against fixed upstream ONNX outputs, request rejection, offline execution and shutdown.
+3. Run `python3 runtime/tools/smoke.py runtime/build/libs/runtime.jar <game>/.localinferenceapi/natives`. The clean-cache test checks Choice, Score and Noul against fixed upstream ONNX outputs, request rejection, offline execution and shutdown.
 
 SHA-256:
 

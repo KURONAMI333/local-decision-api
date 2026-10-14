@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
-"""Fail-closed executable-content gate for distribution archives.
+"""Fail-closed native-binary gate for distribution archives.
 
-Scans a jar/zip (and every archive nested inside it at any depth) for Windows
-executables. Intended to be wired into packaging so a distribution archive can
-never ship a PE executable unnoticed.
+Scans a jar/zip (and every archive nested inside it at any depth) for native
+binaries. Intended to be wired into packaging so a distribution archive can
+never ship an executable or a native library unnoticed. Since 1.0.3 the mod
+downloads its native libraries from Maven Central on first start, so the
+distribution must contain none at all.
 
-Detection semantics (the same rules also gate the release pipeline; keep the
-two implementations in sync):
+Detection is by content (magic bytes), not by file name, plus a name rule:
 
   * FAIL on any member whose name ends in ``.exe`` -- checked on the NAME,
-    independent of content, so a PE DLL renamed ``x.exe`` still fails.
-  * FAIL on any member whose bytes are a real PE executable: ``MZ`` magic
-    plus the ``PE\\0\\0`` signature at the offset stored at ``0x3c``, without
-    the IMAGE_FILE_DLL (0x2000) characteristic. DLLs are reported as
-    warnings only: they are normal JNI natives, not the ".exe files" a store
-    moderation notice means.
+    independent of content.
+  * FAIL on any PE image: ``MZ`` magic plus the ``PE\\0\\0`` signature at the
+    offset stored at ``0x3c``. Executables and DLLs both fail.
   * FAIL on an ``MZ`` stub whose PE signature cannot be verified
     (truncated, missing, or pointing beyond the read bound): an executable
     header we cannot disprove must not pass a fail-closed check.
-  * Other executable-ish extensions (dll/sys/scr/com/msi/cpl/ocx/drv) are
-    reported as warnings, not failures.
+  * FAIL on ELF (``\\x7fELF``), thin Mach-O (``feedface``/``feedfacf`` in
+    either byte order), fat Mach-O (``cafebabe``/``cafebabf`` followed by an
+    architecture count below 45 -- a Java class file has the same first four
+    bytes but a class-file version of 45 or more there) and ``ar`` static
+    archives (``!<arch>``).
+  * Other executable-ish extensions (dll/sys/scr/com/msi/cpl/ocx/drv/so/dylib/
+    jnilib) without native content are reported as warnings.
 
 Recursion:
 
@@ -37,7 +40,7 @@ Recursion:
     runtime jar is ~470 MB and must still be inspected), recursion depth 8.
     Exceeding a bound is an error.
 
-Exit codes: 0 = clean, 2 = executable findings, 3 = scan error / unreadable
+Exit codes: 0 = clean, 2 = native binary findings, 3 = scan error / unreadable
 input.
 
 Usage:
@@ -64,7 +67,10 @@ MAX_DEPTH = 8
 ZIP_MAGICS = (b"PK\x03\x04", b"PK\x05\x06")
 ARCHIVE_SUFFIXES = (".jar", ".zip", ".war", ".ear", ".apk", ".whl")
 EXE_SUFFIX = ".exe"
-OTHER_EXEC_EXTS = ("dll", "sys", "scr", "com", "msi", "cpl", "ocx", "drv")
+OTHER_EXEC_EXTS = ("dll", "sys", "scr", "com", "msi", "cpl", "ocx", "drv", "so", "dylib", "jnilib")
+MACHO_THIN = (b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe")
+MACHO_FAT = (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf")
+JAVA_CLASS_MIN_MAJOR = 45
 
 
 def _classify_head(head: bytes, name: str) -> tuple[str | None, bool]:
@@ -82,6 +88,16 @@ def _classify_head(head: bytes, name: str) -> tuple[str | None, bool]:
         chars = struct.unpack("<H", head[pe_off + 22 : pe_off + 24])[0]
         kind = "PE_DLL" if chars & 0x2000 else "PE_EXE"
         return (f"{kind}(machine=0x{machine:04x})", False)
+    if head[:4] == b"\x7fELF":
+        return ("ELF", False)
+    if head[:4] in MACHO_THIN:
+        return ("MACHO", False)
+    if head[:4] in MACHO_FAT and len(head) >= 8:
+        count = struct.unpack(">I", head[4:8])[0]
+        if 0 < count < JAVA_CLASS_MIN_MAJOR:
+            return ("MACHO_FAT", False)
+    if head[:8] == b"!<arch>\n":
+        return ("AR_ARCHIVE", False)
     if "." in name_l and name_l.rsplit(".", 1)[-1] in OTHER_EXEC_EXTS:
         return ("EXT:" + name_l.rsplit(".", 1)[-1], False)
     return (None, False)
@@ -92,7 +108,7 @@ def _is_failure(kind: str | None, name: str) -> bool:
         return True
     if not kind:
         return False
-    return kind.startswith("PE_EXE") or kind in ("MZ_NO_PE_SIG", "MZ_TRUNCATED")
+    return not kind.startswith("EXT:")
 
 
 def _looks_like_archive(head: bytes, name: str) -> bool:
@@ -173,12 +189,13 @@ def scan_zip(blob: bytes, chain: str, out: dict, depth: int) -> None:
 
 
 def scan_path(path: str) -> dict:
-    out = {"archives": [], "nested": [], "flagged": [], "errors": []}
+    out: dict = {"archives": [], "nested": [], "flagged": [], "errors": []}
     try:
         with open(path, "rb") as fh:
             blob = fh.read()
     except OSError as exc:
         out["errors"].append({"archive": path, "error": f"read:{exc}"[:160]})
+        out.update(exe_failures=0, warnings=0, entries=0)
         return out
     scan_zip(blob, path.rsplit("/", 1)[-1], out, 0)
     fails = [f for f in out["flagged"] if f["fail"]]
@@ -229,9 +246,9 @@ def main(argv: list[str]) -> int:
     if worst == 3:
         print("exe-scan-gate: ERROR -- archive(s) could not be fully inspected", file=sys.stderr)
     elif worst == 2:
-        print("exe-scan-gate: FAIL -- executable content found", file=sys.stderr)
+        print("exe-scan-gate: FAIL -- native binary content found", file=sys.stderr)
     else:
-        print("exe-scan-gate: OK -- no executables", file=sys.stderr)
+        print("exe-scan-gate: OK -- no native binaries", file=sys.stderr)
     return worst
 
 

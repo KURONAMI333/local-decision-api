@@ -1,6 +1,7 @@
 package com.kuronami.localinferenceapi.internal;
 
 import com.google.gson.*;
+import com.kuronami.localinferenceapi.Constants;
 import com.kuronami.localinferenceapi.api.*;
 import com.kuronami.localinferenceapi.internal.som.TypedBackend;
 
@@ -33,10 +34,14 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
     private DataOutputStream output;
     private Throwable terminalFailure;
 
-    @FunctionalInterface interface Launcher { Process launch() throws IOException; }
+    /** worker の起動。prepare は起動 timeout の外で走る(初回の native 取得を含むため)。 */
+    @FunctionalInterface interface Launcher {
+        Process launch() throws IOException;
+        default void prepare() throws IOException {}
+    }
 
     public WorkerClient(Path gameDirectory) {
-        this(() -> launchBundled(gameDirectory), Duration.ofSeconds(180), Duration.ofSeconds(60), Duration.ofMinutes(5));
+        this(new BundledLauncher(gameDirectory), Duration.ofSeconds(180), Duration.ofSeconds(60), Duration.ofMinutes(5));
     }
 
     WorkerClient(Launcher launcher, Duration startupTimeout, Duration inferenceTimeout) {
@@ -117,6 +122,10 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
             } finally {
                 deadline.cancel(false);
             }
+        } catch (NativeRuntime.Unavailable unavailable) {
+            // 取得・照合できない native では起動しない。利用側と log の両方に理由を出す。
+            Constants.LOG.error("Local Decision API inference is unavailable: {}", unavailable.getMessage(), unavailable);
+            fail(new IllegalStateException("Local Decision API inference is unavailable: " + unavailable.getMessage(), unavailable));
         } catch (Exception failure) {
             fail(new IllegalStateException("Local Decision API worker failed; see the local worker log", failure));
         } finally {
@@ -185,6 +194,7 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
             if (terminalFailure != null) throw new IOException("Worker is closed");
             if (process != null) return;
         }
+        launcher.prepare();
         IOException firstExit = null;
         for (int attempt = 0; attempt < 2; attempt++) {
             ScheduledFuture<?> deadline = deadline(startupTimeout, "Local Decision API startup timed out");
@@ -333,26 +343,48 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
         output.flush();
     }
 
-    private static Process launchBundled(Path gameDirectory) throws IOException {
-        Path cache = gameDirectory.resolve(".localinferenceapi/runtime");
-        Path jar = RuntimeCache.extract(cache, () -> WorkerClient.class.getResourceAsStream("/localinferenceapi/runtime.jar"));
-        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
-        // runtime.jar は Java 21 以上で動く。Java 17 サーバーでは
-        // -Dlocalinferenceapi.worker.java=<java21+ の絶対パス> で worker の
-        // 実行ファイルを明示できる (未設定ならホストの java.home を使う)。
-        String override = System.getProperty("localinferenceapi.worker.java");
-        Path java = (override == null || override.isBlank())
-                ? Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java")
-                : Path.of(override);
-        Path log = cache.resolve("worker-" + ProcessHandle.current().pid() + ".log");
-        ProcessBuilder builder = new ProcessBuilder(java.toString(), "-Xmx2G", "-jar", jar.toString(), "--worker")
-                .directory(gameDirectory.toFile()).redirectError(ProcessBuilder.Redirect.appendTo(log.toFile()));
-        builder.environment().put("DJL_OFFLINE", "true");
-        builder.environment().put("HF_HUB_OFFLINE", "1");
-        builder.environment().put("TRANSFORMERS_OFFLINE", "1");
-        Process worker = builder.start();
-        System.err.println("[Local Decision API] worker spawned pid=" + worker.pid() + " jar=" + jar + " log=" + log);
-        return worker;
+    /** 同梱 runtime.jar と、初回に Maven Central から用意した native library で worker を起動する。 */
+    private static final class BundledLauncher implements Launcher {
+        private final Path gameDirectory;
+        private volatile NativeRuntime.Prepared natives;
+
+        BundledLauncher(Path gameDirectory) { this.gameDirectory = gameDirectory; }
+
+        @Override public void prepare() throws IOException {
+            natives = NativeRuntime.prepare(gameDirectory.resolve(".localinferenceapi/natives"));
+        }
+
+        @Override public Process launch() throws IOException {
+            NativeRuntime.Prepared prepared = natives;
+            if (prepared == null) throw new IOException("Native runtime was not prepared");
+            Path cache = gameDirectory.resolve(".localinferenceapi/runtime");
+            Path jar = RuntimeCache.extract(cache, () -> WorkerClient.class.getResourceAsStream("/localinferenceapi/runtime.jar"));
+            boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+            // runtime.jar は Java 21 以上で動く。Java 17 サーバーでは
+            // -Dlocalinferenceapi.worker.java=<java21+ の絶対パス> で worker の
+            // 実行ファイルを明示できる (未設定ならホストの java.home を使う)。
+            String override = System.getProperty("localinferenceapi.worker.java");
+            Path java = (override == null || override.isBlank())
+                    ? Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java")
+                    : Path.of(override);
+            Path log = cache.resolve("worker-" + ProcessHandle.current().pid() + ".log");
+            // ONNX Runtime は指定ディレクトリに無い library を他所から探さず失敗する。
+            // JNA は system の jnidispatch を読まない(取得しないので DJL は CPU 経路になる)。
+            ProcessBuilder builder = new ProcessBuilder(java.toString(), "-Xmx2G",
+                    "-Donnxruntime.native.path=" + prepared.onnxRuntimeDirectory(),
+                    "-Djna.nosys=true",
+                    "-jar", jar.toString(), "--worker")
+                    .directory(gameDirectory.toFile()).redirectError(ProcessBuilder.Redirect.appendTo(log.toFile()));
+            builder.environment().put("DJL_OFFLINE", "true");
+            builder.environment().put("HF_HUB_OFFLINE", "1");
+            builder.environment().put("TRANSFORMERS_OFFLINE", "1");
+            // DJL tokenizers はこの1ファイルの親ディレクトリから読み、Web からの取得へ進まない。
+            builder.environment().put("RUST_LIBRARY_PATH", prepared.tokenizersLibrary().toString());
+            builder.environment().remove("RUST_FLAVOR");
+            Process worker = builder.start();
+            System.err.println("[Local Decision API] worker spawned pid=" + worker.pid() + " jar=" + jar + " log=" + log);
+            return worker;
+        }
     }
 
     private void fail(Throwable failure) {

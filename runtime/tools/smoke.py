@@ -1,4 +1,10 @@
-"""Exercise the shipped Java worker with a clean cache and no network access."""
+"""Exercise the shipped Java worker with a clean cache and no network access.
+
+Usage: smoke.py <runtime.jar> <natives-dir>
+
+runtime.jar carries no native libraries. <natives-dir> is the `.localinferenceapi/natives`
+directory a game start has already filled from Maven Central (see NativeRuntime).
+"""
 import json
 import os
 from pathlib import Path
@@ -10,6 +16,11 @@ import tempfile
 import time
 
 jar = Path(sys.argv[1]).resolve()
+natives = Path(sys.argv[2]).resolve()
+platform = {'darwin': 'macos', 'win32': 'windows'}.get(sys.platform, 'linux') + '-' + (
+    'arm64' if os.uname().machine in ('arm64', 'aarch64') else 'amd64') if hasattr(os, 'uname') else 'windows-amd64'
+onnx_dir = natives / 'onnxruntime-1.30.0' / platform
+tokenizers = next((natives / 'tokenizers-0.38.0' / platform).glob('*tokenizers.*'))
 java = os.path.join(os.environ['JAVA_HOME'], 'bin', 'java') if os.environ.get('JAVA_HOME') else 'java'
 
 with tempfile.TemporaryDirectory(prefix='local-inference-clean-') as home:
@@ -18,8 +29,10 @@ with tempfile.TemporaryDirectory(prefix='local-inference-clean-') as home:
     command = (["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)(deny network*)"]
                if sys.platform == 'darwin' else [])
     command += (["/usr/bin/time", "-l"] if sys.platform == 'darwin' else [])
-    command += [java, '-Xmx2G', '-Duser.home=' + home, '-jar', str(clean_jar), '--worker']
-    env = {'PATH': os.environ.get('PATH', ''), 'HOME': home, 'DJL_OFFLINE': 'true'}
+    command += [java, '-Xmx2G', '-Duser.home=' + home, '-Donnxruntime.native.path=' + str(onnx_dir),
+                '-Djna.nosys=true', '-jar', str(clean_jar), '--worker']
+    env = {'PATH': os.environ.get('PATH', ''), 'HOME': home, 'DJL_OFFLINE': 'true',
+           'RUST_LIBRARY_PATH': str(tokenizers)}
     start = time.monotonic()
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, env=env, cwd=home)

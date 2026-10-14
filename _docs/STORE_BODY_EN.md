@@ -6,7 +6,9 @@ If a mod you use lists Local Decision API as a dependency, install it alongside 
 
 [System One Models (SOMs)](https://typesafe.ai/blog/introducing-system-one-models-and-jev) are built around structured decisions: a defined question produces a choice, score, or probability. This API uses that style of question. This release uses [JevK5-4B v0.3](https://github.com/allebee/jevk5) as its primary model. Its [model card](https://huggingface.co/alibiserikbay/JevK5) describes the weights and training; this mod supplies the Minecraft integration, request handling, and a bundled fallback model.
 
-On a supported native route, the mod downloads about **3.1 GB** of model and runtime files on first use and keeps them in the game directory for later offline use. The mod JAR is about **450 MB** because it includes the fallback model. Inference uses the host computer's RAM and, when available, GPU memory. A rented server must permit the download and a worker process for the native route. Results are model estimates, so a calling mod should handle uncertain or unsuitable answers in its own logic.
+**The first start needs an internet connection.** The mod downloads the ONNX Runtime and tokenizer libraries that its fallback model needs (about 73 MB) from Maven Central, checks them against fixed SHA-256 values, and keeps them in the game directory. Later starts work offline. If the download fails, the mod reports that it cannot answer and the game keeps running.
+
+On a supported native route, the mod also downloads about **3.1 GB** of model and runtime files on first use and keeps them in the game directory for later offline use. The mod JAR is about **410 MB** because it includes the fallback model. Inference uses the host computer's RAM and, when available, GPU memory. A rented server must permit the download and a worker process for the native route. Results are model estimates, so a calling mod should handle uncertain or unsuitable answers in its own logic.
 
 ### For mod authors
 

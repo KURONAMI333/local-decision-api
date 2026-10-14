@@ -53,11 +53,11 @@ tasks.named('processResources') {
     }
 }
 
-// 配布 JAR の fail-closed EXE gate。ネストした archive も含めて PE executable /
-// .exe が1件でもあれば build を失敗させる（tools/exe_scan_gate.py）。
+// 配布 JAR の fail-closed gate。ネストした archive も含めて native binary
+// (PE/ELF/Mach-O) か .exe が1件でもあれば build を失敗させる（tools/exe_scan_gate.py）。
 tasks.register('verifyNoExecutableContent') {
     group = 'verification'
-    description = 'Fail the build if the distribution jar contains a PE executable at any nesting depth.'
+    description = 'Fail the build if the distribution jar contains a native binary (PE/ELF/Mach-O) at any nesting depth.'
     dependsOn tasks.named('assemble')
     doLast {
         def jarFile = tasks.named('jar', Jar).get().archiveFile.get().asFile
