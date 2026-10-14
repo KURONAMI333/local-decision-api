@@ -6,12 +6,21 @@ import com.kuronami.localinferenceapi.internal.som.HttpFetcher;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
+import java.util.stream.Stream;
 import java.util.zip.ZipFile;
 
 /**
@@ -47,6 +56,9 @@ public final class NativeRuntime {
     }
 
     static final String MAVEN_CENTRAL_HOST = "repo1.maven.org";
+
+    /** この時間 1 byte も受信が進まなければ取得を諦める。試験だけが短くする。 */
+    static volatile Duration stallTimeout = Duration.ofSeconds(60);
 
     static final Artifact ONNX_RUNTIME = new Artifact("onnxruntime-1.30.0",
             URI.create("https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime/1.30.0/onnxruntime-1.30.0.jar"),
@@ -100,6 +112,7 @@ public final class NativeRuntime {
                     + System.getProperty("os.name") + " " + System.getProperty("os.arch") + ")", null);
         }
         Files.createDirectories(cacheRoot);
+        removeAbandonedParts(cacheRoot);
         Path onnxDirectory = install(cacheRoot, fetcher, onnxRuntime, platform);
         Path tokenizersDirectory = install(cacheRoot, fetcher, tokenizers, platform);
         List<Entry> tokenizerFiles = tokenizers.entries().get(platform);
@@ -140,6 +153,19 @@ public final class NativeRuntime {
         return directory;
     }
 
+    /** 強制終了で残った古い一時ファイルを消す。進行中の別インスタンスの分は時刻で避ける。 */
+    private static void removeAbandonedParts(Path cacheRoot) {
+        long cutoff = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(1);
+        try (Stream<Path> files = Files.walk(cacheRoot, 3)) {
+            for (Path file : (Iterable<Path>) files::iterator) {
+                if (!file.getFileName().toString().endsWith(".part")) continue;
+                try {
+                    if (Files.getLastModifiedTime(file).toMillis() < cutoff) Files.deleteIfExists(file);
+                } catch (IOException ignored) { /* 掃除は best effort。取得自体は続ける */ }
+            }
+        } catch (IOException | UncheckedIOException ignored) { /* 同上 */ }
+    }
+
     private static boolean installed(Path directory, List<Entry> wanted) throws IOException {
         for (Entry entry : wanted) {
             Path file = directory.resolve(entry.fileName());
@@ -151,7 +177,37 @@ public final class NativeRuntime {
     private static void fetch(Fetcher fetcher, Artifact artifact, Path target) throws IOException {
         MessageDigest digest = digest();
         long total = 0;
+        // 起動 timeout の外で走るので、受信が止まったまま待ち続けないよう自前で見張る。
+        // 一定時間 1 byte も進まなければ本文を閉じて割り込む。閉じた本文が例外でなく
+        // EOF を返す実装もあるので、ループを抜けた後にも stalled を見る。
+        Thread downloader = Thread.currentThread();
+        AtomicLong lastProgress = new AtomicLong(System.nanoTime());
+        AtomicBoolean stalled = new AtomicBoolean();
+        Object guard = new Object();
+        boolean[] finished = {false};
+        AtomicReference<InputStream> body = new AtomicReference<>();
+        long limit = stallTimeout.toNanos();
+        long period = Math.max(limit / 4, TimeUnit.MILLISECONDS.toNanos(10));
+        ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "localinferenceapi-download-watchdog");
+            thread.setDaemon(true);
+            return thread;
+        });
+        watchdog.scheduleAtFixedRate(() -> {
+            if (System.nanoTime() - lastProgress.get() < limit) return;
+            synchronized (guard) {
+                // fetch を抜けた後は割り込まない(後続の処理に割り込みを漏らさない)。
+                if (finished[0] || !stalled.compareAndSet(false, true)) return;
+                InputStream open = body.get();
+                if (open != null) {
+                    try { open.close(); } catch (IOException ignored) { /* read 側が失敗として受け取る */ }
+                }
+                downloader.interrupt();
+            }
+        }, period, period, TimeUnit.NANOSECONDS);
         try (Fetcher.Response response = fetcher.open(artifact.uri(), 0)) {
+            body.set(response.body());
+            lastProgress.set(System.nanoTime());
             if (response.status() != 200) {
                 throw new Unavailable("Maven Central returned HTTP " + response.status() + " for " + artifact.uri(), null);
             }
@@ -160,6 +216,7 @@ public final class NativeRuntime {
                 byte[] buffer = new byte[128 * 1024];
                 for (int read; (read = input.read(buffer)) != -1;) {
                     if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+                    lastProgress.set(System.nanoTime());
                     total += read;
                     if (total > artifact.size()) {
                         throw new Unavailable("Downloaded " + artifact.name() + " is larger than the pinned artifact; it was discarded", null);
@@ -168,15 +225,32 @@ public final class NativeRuntime {
                     output.write(buffer, 0, read);
                 }
             }
+            if (stalled.get()) throw new IOException("Download stalled");
         } catch (Unavailable unavailable) {
             throw unavailable;
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Native runtime download interrupted", interrupted);
-        } catch (IOException failure) {
-            if (Thread.currentThread().isInterrupted()) throw failure;
+        } catch (InterruptedException | IOException failure) {
+            if (stalled.get()) {
+                Thread.interrupted(); // 見張りの割り込みであって停止要求ではない
+                throw new Unavailable("Download of " + artifact.name() + " from Maven Central stopped receiving data for "
+                        + stallTimeout.toSeconds() + " seconds (" + artifact.uri() + ")", failure);
+            }
+            if (failure instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Native runtime download interrupted", failure);
+            }
+            if (Thread.currentThread().isInterrupted()) throw (IOException) failure;
+            if (failure instanceof Fetcher.FetchRejected) {
+                throw new Unavailable("Download of " + artifact.name() + " was redirected away from Maven Central or rejected by the download policy ("
+                        + failure.getMessage() + "); a proxy or captive portal may be intercepting it", failure);
+            }
             throw new Unavailable("Could not download " + artifact.name() + " from Maven Central (" + artifact.uri()
-                    + "); the first start needs an internet connection", failure);
+                    + "); the first inference request needs an internet connection", failure);
+        } finally {
+            synchronized (guard) {
+                finished[0] = true;
+                if (stalled.get()) Thread.interrupted(); // 見張りの割り込みであって停止要求ではない
+            }
+            watchdog.shutdownNow();
         }
         String actual = HexFormat.of().formatHex(digest.digest());
         if (total != artifact.size() || !artifact.sha256().equals(actual)) {
@@ -202,8 +276,12 @@ public final class NativeRuntime {
             if (!entry.sha256().equals(actual)) {
                 throw new Unavailable(entry.path() + " does not match its pinned SHA-256; it was discarded", null);
             }
+            Path published = directory.resolve(entry.fileName());
+            // 同じゲームディレクトリの別インスタンスが先に置いた同一ファイルは置き換えない
+            // (Windows では読込済み DLL への上書きが失敗する)。
+            if (Files.isRegularFile(published) && entry.sha256().equals(hash(published))) return;
             try {
-                Files.move(temporary, directory.resolve(entry.fileName()), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temporary, published, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException unsupported) {
                 // 部分書込みを完成品として扱わないため、atomic move 不可の場所では失敗する。
                 throw new IOException("Native runtime cache does not support atomic publication", unsupported);

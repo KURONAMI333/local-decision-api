@@ -351,7 +351,17 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
         BundledLauncher(Path gameDirectory) { this.gameDirectory = gameDirectory; }
 
         @Override public void prepare() throws IOException {
-            natives = NativeRuntime.prepare(gameDirectory.resolve(".localinferenceapi/natives"));
+            Path cache = gameDirectory.resolve(".localinferenceapi/natives");
+            try {
+                natives = NativeRuntime.prepare(cache);
+            } catch (NativeRuntime.Unavailable unavailable) {
+                throw unavailable;
+            } catch (IOException | RuntimeException failure) {
+                // worker はまだ起動していないので worker log には何も残らない。
+                // ディスク不足・権限・atomic move 不可なども理由つきで利用側と log に出す。
+                if (Thread.currentThread().isInterrupted()) throw failure;
+                throw new NativeRuntime.Unavailable("Could not prepare the native runtime in " + cache + " (" + failure + ")", failure);
+            }
         }
 
         @Override public Process launch() throws IOException {

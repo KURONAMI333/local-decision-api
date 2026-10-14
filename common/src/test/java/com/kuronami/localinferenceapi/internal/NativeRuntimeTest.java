@@ -141,6 +141,81 @@ class NativeRuntimeTest {
     }
 
     @Test
+    void stalledDownloadGivesUpInsteadOfWaitingForever(@TempDir Path tmp) throws IOException {
+        var old = NativeRuntime.stallTimeout;
+        NativeRuntime.stallTimeout = java.time.Duration.ofMillis(300);
+        // 最初の 16 byte の後で何も届かない本文。HttpClient と同じく、閉じられると EOF を返す。
+        var closed = new java.util.concurrent.CountDownLatch(1);
+        var stuck = new java.io.InputStream() {
+            int sent;
+            @Override public int read() throws IOException {
+                if (sent < 16) return ORT_JAR[sent++] & 0xff;
+                try { closed.await(); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+                return -1;
+            }
+            @Override public void close() { closed.countDown(); }
+        };
+        try {
+            long started = System.nanoTime();
+            var failure = assertThrows(NativeRuntime.Unavailable.class, () -> NativeRuntime.prepare(tmp,
+                    (uri, from) -> new Fetcher.Response(200, stuck), "test-platform", ort(ORT_JAR, ORT_LIB), tokenizers()));
+            assertTrue(failure.getMessage().contains("stopped receiving data"), failure.getMessage());
+            assertTrue(System.nanoTime() - started < java.util.concurrent.TimeUnit.SECONDS.toNanos(10));
+            assertFalse(Thread.currentThread().isInterrupted());
+            assertNoPartials(tmp);
+        } finally {
+            NativeRuntime.stallTimeout = old;
+            stuck.close();
+        }
+    }
+
+    @Test
+    void stalledConnectBeforeBodyGivesUp(@TempDir Path tmp) {
+        var old = NativeRuntime.stallTimeout;
+        NativeRuntime.stallTimeout = java.time.Duration.ofMillis(300);
+        try {
+            var failure = assertThrows(NativeRuntime.Unavailable.class, () -> NativeRuntime.prepare(tmp,
+                    (uri, from) -> { Thread.sleep(60_000); throw new AssertionError("not interrupted"); },
+                    "test-platform", ort(ORT_JAR, ORT_LIB), tokenizers()));
+            assertTrue(failure.getMessage().contains("stopped receiving data"), failure.getMessage());
+            assertFalse(Thread.currentThread().isInterrupted());
+        } finally {
+            NativeRuntime.stallTimeout = old;
+        }
+    }
+
+    @Test
+    void redirectAwayFromMavenCentralIsExplained(@TempDir Path tmp) {
+        var failure = assertThrows(NativeRuntime.Unavailable.class, () -> NativeRuntime.prepare(tmp,
+                (uri, from) -> { throw new Fetcher.FetchRejected("host not in allowlist: https://portal.example/login"); },
+                "test-platform", ort(ORT_JAR, ORT_LIB), tokenizers()));
+        assertTrue(failure.getMessage().contains("redirected away from Maven Central"), failure.getMessage());
+    }
+
+    @Test
+    void identicalFilePlacedByAnotherInstanceIsNotReplaced(@TempDir Path tmp) throws IOException {
+        Path directory = tmp.resolve("ort-test/test-platform");
+        Files.createDirectories(directory);
+        Path existing = Files.write(directory.resolve("libort.so"), ORT_LIB);
+        var inode = Files.readAttributes(existing, java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+        NativeRuntime.prepare(tmp, serving(new AtomicInteger(), Map.of(ORT_URI, ORT_JAR, TOKENIZERS_URI, TOKENIZERS_JAR)),
+                "test-platform", ort(ORT_JAR, ORT_LIB), tokenizers());
+        assertEquals(inode, Files.readAttributes(existing, java.nio.file.attribute.BasicFileAttributes.class).fileKey());
+        assertNoPartials(tmp);
+    }
+
+    @Test
+    void abandonedPartialsAreCleanedButFreshOnesKept(@TempDir Path tmp) throws IOException {
+        Path old = Files.write(tmp.resolve("ort-test-123.jar.part"), new byte[4]);
+        Files.setLastModifiedTime(old, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 2 * 3_600_000L));
+        Path fresh = Files.write(tmp.resolve("ort-test-456.jar.part"), new byte[4]);
+        NativeRuntime.prepare(tmp, serving(new AtomicInteger(), Map.of(ORT_URI, ORT_JAR, TOKENIZERS_URI, TOKENIZERS_JAR)),
+                "test-platform", ort(ORT_JAR, ORT_LIB), tokenizers());
+        assertFalse(Files.exists(old));
+        assertTrue(Files.exists(fresh));
+    }
+
+    @Test
     void unsupportedPlatformIsUnavailableWithoutNetwork(@TempDir Path tmp) {
         AtomicInteger calls = new AtomicInteger();
         assertThrows(NativeRuntime.Unavailable.class, () -> NativeRuntime.prepare(tmp,

@@ -39,6 +39,51 @@ class WorkerClientTest {
         assertThrows(IllegalArgumentException.class, () -> new DecisionRequest("c", "q", Collections.nCopies(25, "A")));
     }
 
+    @Test void unavailableNativeRuntimeFailsClearlyWithoutLaunching() throws Exception {
+        AtomicInteger launches = new AtomicInteger();
+        AtomicInteger prepares = new AtomicInteger();
+        WorkerClient.Launcher launcher = new WorkerClient.Launcher() {
+            @Override public Process launch() throws IOException { launches.incrementAndGet(); return WorkerClientTest.this.launch("ok"); }
+            @Override public void prepare() throws IOException {
+                prepares.incrementAndGet();
+                throw new NativeRuntime.Unavailable("Could not download x from Maven Central; the first inference request needs an internet connection", null);
+            }
+        };
+        try (var client = new WorkerClient(launcher, Duration.ofSeconds(5), Duration.ofSeconds(5))) {
+            var request = new DecisionRequest("context", "question", List.of("A", "B"));
+            var failure = assertThrows(ExecutionException.class, () -> client.decide(request).get(10, TimeUnit.SECONDS));
+            assertInstanceOf(IllegalStateException.class, failure.getCause());
+            assertTrue(failure.getCause().getMessage().startsWith("Local Decision API inference is unavailable: Could not download"), failure.getCause().getMessage());
+            // 同じ session では取り直さず、すぐ同じ理由で失敗する。
+            var again = assertThrows(ExecutionException.class, () -> client.decide(request).get(10, TimeUnit.SECONDS));
+            assertSame(failure.getCause(), again.getCause());
+            assertEquals(1, prepares.get());
+            assertEquals(0, launches.get());
+            assertTrue(client.isClosed());
+        }
+    }
+
+    @Test void closeDuringPreparationCancelsPendingRequest() throws Exception {
+        CountDownLatch preparing = new CountDownLatch(1);
+        WorkerClient.Launcher launcher = new WorkerClient.Launcher() {
+            @Override public Process launch() throws IOException { return WorkerClientTest.this.launch("ok"); }
+            @Override public void prepare() throws IOException {
+                preparing.countDown();
+                try { Thread.sleep(60_000); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Native runtime download interrupted", interrupted);
+                }
+            }
+        };
+        var client = new WorkerClient(launcher, Duration.ofSeconds(5), Duration.ofSeconds(5));
+        var future = client.decide(new DecisionRequest("context", "question", List.of("A", "B")));
+        assertTrue(preparing.await(10, TimeUnit.SECONDS));
+        client.close();
+        var failure = assertThrows(CancellationException.class, () -> future.get(10, TimeUnit.SECONDS));
+        assertEquals("Local Decision API stopped", failure.getMessage());
+    }
+
     @Test void startsLazilyAndReusesOneProcess() throws Exception {
         AtomicInteger launches = new AtomicInteger();
         try (var client = new WorkerClient(() -> { launches.incrementAndGet(); return launch("ok"); }, Duration.ofSeconds(5), Duration.ofSeconds(5))) {
