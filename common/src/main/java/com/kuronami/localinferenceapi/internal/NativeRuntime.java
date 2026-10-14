@@ -60,6 +60,9 @@ public final class NativeRuntime {
     /** この時間 1 byte も受信が進まなければ取得を諦める。試験だけが短くする。 */
     static volatile Duration stallTimeout = Duration.ofSeconds(60);
 
+    /** 少しずつでも届き続ける取得の上限。73 MB を極端に遅い回線で何時間も待たない。試験だけが短くする。 */
+    static volatile Duration downloadLimit = Duration.ofMinutes(30);
+
     static final Artifact ONNX_RUNTIME = new Artifact("onnxruntime-1.30.0",
             URI.create("https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime/1.30.0/onnxruntime-1.30.0.jar"),
             55_572_031L, "57d8cedf6f0c8fd6d50ed65c17bf9939f55a4512f4a1f3e732023d258f262ac6", // gitleaks:allow
@@ -187,6 +190,7 @@ public final class NativeRuntime {
         boolean[] finished = {false};
         AtomicReference<InputStream> body = new AtomicReference<>();
         long limit = stallTimeout.toNanos();
+        long deadline = System.nanoTime() + downloadLimit.toNanos();
         long period = Math.max(limit / 4, TimeUnit.MILLISECONDS.toNanos(10));
         ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(task -> {
             Thread thread = new Thread(task, "localinferenceapi-download-watchdog");
@@ -194,7 +198,8 @@ public final class NativeRuntime {
             return thread;
         });
         watchdog.scheduleAtFixedRate(() -> {
-            if (System.nanoTime() - lastProgress.get() < limit) return;
+            long now = System.nanoTime();
+            if (now - lastProgress.get() < limit && now - deadline < 0) return;
             synchronized (guard) {
                 // fetch を抜けた後は割り込まない(後続の処理に割り込みを漏らさない)。
                 if (finished[0] || !stalled.compareAndSet(false, true)) return;
@@ -232,7 +237,8 @@ public final class NativeRuntime {
             if (stalled.get()) {
                 Thread.interrupted(); // 見張りの割り込みであって停止要求ではない
                 throw new Unavailable("Download of " + artifact.name() + " from Maven Central stopped receiving data for "
-                        + stallTimeout.toSeconds() + " seconds (" + artifact.uri() + ")", failure);
+                        + stallTimeout.toSeconds() + " seconds or did not finish within " + downloadLimit.toMinutes()
+                        + " minutes (" + artifact.uri() + ")", failure);
             }
             if (failure instanceof InterruptedException) {
                 Thread.currentThread().interrupt();

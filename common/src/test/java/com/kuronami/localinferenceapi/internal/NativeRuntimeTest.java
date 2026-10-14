@@ -170,6 +170,41 @@ class NativeRuntimeTest {
     }
 
     @Test
+    void slowButSteadyDownloadStopsAtOverallLimit(@TempDir Path tmp) {
+        var oldStall = NativeRuntime.stallTimeout;
+        var oldLimit = NativeRuntime.downloadLimit;
+        NativeRuntime.stallTimeout = java.time.Duration.ofSeconds(30);
+        NativeRuntime.downloadLimit = java.time.Duration.ofMillis(400);
+        // 20ms ごとに 1 byte。停滞ではないが、全体の上限は超える。
+        var trickle = new java.io.InputStream() {
+            int sent;
+            volatile boolean closed;
+            @Override public int read() throws IOException {
+                if (closed) return -1;
+                try { Thread.sleep(20); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new java.io.InterruptedIOException(); }
+                return sent < ORT_JAR.length ? ORT_JAR[sent++] & 0xff : -1;
+            }
+            @Override public int read(byte[] b, int off, int len) throws IOException {
+                int value = read();
+                if (value < 0) return -1;
+                b[off] = (byte) value;
+                return 1;
+            }
+            @Override public void close() { closed = true; }
+        };
+        try {
+            var failure = assertThrows(NativeRuntime.Unavailable.class, () -> NativeRuntime.prepare(tmp,
+                    (uri, from) -> new Fetcher.Response(200, trickle), "test-platform", ort(ORT_JAR, ORT_LIB), tokenizers()));
+            assertTrue(failure.getMessage().contains("did not finish within"), failure.getMessage());
+            assertFalse(Thread.currentThread().isInterrupted());
+            assertNoPartials(tmp);
+        } finally {
+            NativeRuntime.stallTimeout = oldStall;
+            NativeRuntime.downloadLimit = oldLimit;
+        }
+    }
+
+    @Test
     void stalledConnectBeforeBodyGivesUp(@TempDir Path tmp) {
         var old = NativeRuntime.stallTimeout;
         NativeRuntime.stallTimeout = java.time.Duration.ofMillis(300);

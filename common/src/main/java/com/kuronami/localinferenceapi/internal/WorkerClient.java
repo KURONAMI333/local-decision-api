@@ -124,7 +124,8 @@ public final class WorkerClient implements AutoCloseable, TypedBackend {
             }
         } catch (NativeRuntime.Unavailable unavailable) {
             // 取得・照合できない native では起動しない。利用側と log の両方に理由を出す。
-            Constants.LOG.error("Local Decision API inference is unavailable: {}", unavailable.getMessage(), unavailable);
+            // 停止(close)と同時に起きた時は停止が優先なので、誤ったエラーを残さない。
+            if (!isClosed()) Constants.LOG.error("Local Decision API inference is unavailable: {}", unavailable.getMessage(), unavailable);
             fail(new IllegalStateException("Local Decision API inference is unavailable: " + unavailable.getMessage(), unavailable));
         } catch (Exception failure) {
             fail(new IllegalStateException("Local Decision API worker failed; see the local worker log", failure));
